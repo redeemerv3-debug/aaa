@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Camera, RefreshCw, Sparkles, Zap, Shield, User, Play, Square, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Camera, Play, Square, User } from 'lucide-react';
 
 // ==========================================
 // CONSTANTES Y CONFIGURACIÓN DE PÓKER
@@ -112,13 +112,12 @@ const evaluate7Cards = (cards) => {
     if (sfHigh > 0) return { category: 8, name: sfHigh === 14 ? 'Escalera Real' : 'Escalera de Color', score: 8000000 + sfHigh };
   }
 
-  const quads = [], trips = [], pairs = [], singles = [];
+  const quads = [], trips = [], pairs = [];
   for (const r of uniqueRanks) {
     const count = rankCounts[r];
     if (count === 4) quads.push(r);
     else if (count === 3) trips.push(r);
     else if (count === 2) pairs.push(r);
-    else singles.push(r);
   }
 
   if (quads.length > 0) return { category: 7, name: 'Póker', score: 7000000 + quads[0] * 100 };
@@ -140,7 +139,7 @@ const runMonteCarlo = (hole, board, iterations = 150) => {
   const deck = createFullDeck().filter(d => !known.some(k => k.rank === d.rank && k.suit === d.suit));
 
   let wins = 0;
-  const neededBoard = 5 - validBoard.length;
+  const neededBoard = Math.max(0, 5 - validBoard.length);
 
   for (let i = 0; i < iterations; i++) {
     const dCopy = [...deck];
@@ -185,7 +184,7 @@ export default function App() {
   // Motor GTO Híbrido 98% + 2% Explotativo
   const decision = useMemo(() => {
     const validHole = holeCards.filter(Boolean);
-    if (validHole.length < 2) return { action: 'INICIA CÁMARA O SELECCIONA', sizing: 'La visión continua detectará tus cartas', color: 'slate', points: [] };
+    if (validHole.length < 2) return { action: 'INICIA CÁMARA O SELECCIONA', sizing: 'La visión continua detectará tus cartas', color: 'slate', potOdds: 0, mdf: 100 };
 
     const potOdds = callAmount > 0 ? Math.round((callAmount / (pot + callAmount)) * 100) : 0;
     const mdf = callAmount > 0 ? Math.round((pot / (pot + callAmount)) * 100) : 100;
@@ -231,7 +230,7 @@ export default function App() {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
       }
       setIsStreaming(true);
       setStreamStatus('Analizando fotogramas...');
@@ -252,7 +251,7 @@ export default function App() {
     setStreamStatus('Inactivo');
   };
 
-  // Bucle de Streaming Continuo (Envía fotograma cada 2.5 segundos a Gemini Vision)
+  // Bucle de Streaming Continuo
   const runContinuousVisionLoop = () => {
     if (streamTimerRef.current) clearInterval(streamTimerRef.current);
 
@@ -269,7 +268,7 @@ export default function App() {
       if (!base64Data) return;
 
       const apiKey = "";
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
       const prompt = `Analiza esta mesa de póker en tiempo real. Devuelve estrictamente un JSON con:
 - holeCards: array de 2 strings (ej: ["Ah", "Kd"]) o null si no se ven
@@ -342,7 +341,7 @@ export default function App() {
 
       {/* 1. VISOR DE CÁMARA EN VIVO / STREAMING */}
       <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <video ref={videoRef} playsInline muted className={`w-full h-40 object-cover ${isStreaming ? 'block' : 'hidden'}`} />
+        <video ref={videoRef} playsInline muted autoPlay className={`w-full h-40 object-cover ${isStreaming ? 'block' : 'hidden'}`} />
         <canvas ref={canvasRef} className="hidden" />
 
         {!isStreaming && (
