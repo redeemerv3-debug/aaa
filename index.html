@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PokerVision Pro - Streaming con IA</title>
+    <title>PokerVision Pro - Streaming GTO</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -122,14 +122,17 @@
         };
 
         function App() {
+            const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('poker_gemini_key') || '');
             const [apiKey, setApiKey] = useState(localStorage.getItem('poker_gemini_key') || '');
+            const [keySaved, setKeySaved] = useState(!!localStorage.getItem('poker_gemini_key'));
+            
             const [holeCards, setHoleCards] = useState([null, null]);
             const [boardCards, setBoardCards] = useState([null, null, null, null, null]);
             const [pot, setPot] = useState(150);
             const [callAmount, setCallAmount] = useState(50);
             const [isStreaming, setIsStreaming] = useState(false);
-            const [streamStatus, setStreamStatus] = useState('Inactivo (Introduce tu API Key)');
-            const [debugLog, setDebugLog] = useState('Esperando inicio...');
+            const [streamStatus, setStreamStatus] = useState('Inactivo');
+            const [debugLog, setDebugLog] = useState('Esperando clave y cámara...');
             const [rng, setRng] = useState(null);
 
             const videoRef = useRef(null);
@@ -138,14 +141,18 @@
 
             const equity = useMemo(() => runMonteCarlo(holeCards, boardCards), [holeCards, boardCards]);
 
-            const saveApiKey = (key) => {
-                setApiKey(key);
-                localStorage.setItem('poker_gemini_key', key);
+            const handleSaveKey = (e) => {
+                e.preventDefault();
+                if (!apiKeyInput.trim()) return;
+                setApiKey(apiKeyInput.trim());
+                localStorage.setItem('poker_gemini_key', apiKeyInput.trim());
+                setKeySaved(true);
+                setDebugLog('API Key guardada correctamente.');
             };
 
             const decision = useMemo(() => {
                 const validHole = holeCards.filter(Boolean);
-                if (validHole.length < 2) return { action: 'CONFIGURA TUS CARTAS O CÁMARA', sizing: 'La IA actualizará las decisiones en tiempo real', color: 'slate', potOdds: 0, mdf: 100 };
+                if (validHole.length < 2) return { action: 'INICIA LA CÁMARA', sizing: 'La IA analizará tus cartas de mano y mesa', color: 'slate', potOdds: 0, mdf: 100 };
 
                 const potOdds = callAmount > 0 ? Math.round((callAmount / (pot + callAmount)) * 100) : 0;
                 const mdf = callAmount > 0 ? Math.round((pot / (pot + callAmount)) * 100) : 100;
@@ -167,7 +174,7 @@
 
             const startCameraStream = async () => {
                 if (!apiKey) {
-                    alert("Por favor, introduce tu clave de API de Gemini en el campo superior.");
+                    alert("Por favor, guarda tu API Key primero.");
                     return;
                 }
                 try {
@@ -181,7 +188,7 @@
                     setStreamStatus('Streaming Activo');
                     runContinuousVisionLoop();
                 } catch (err) {
-                    setStreamStatus('Error de permisos de cámara');
+                    setStreamStatus('Error de cámara');
                     setDebugLog('Error getUserMedia: ' + err.message);
                 }
             };
@@ -246,7 +253,7 @@
                         if (!rawText) return;
 
                         const parsed = JSON.parse(rawText);
-                        setDebugLog('¡IA OK! Detectado pot: ' + parsed.pot);
+                        setDebugLog('¡IA OK! Bote: ' + parsed.pot);
 
                         if (parsed.holeCards && Array.isArray(parsed.holeCards) && parsed.holeCards.length >= 2) {
                             const parseCard = (str) => {
@@ -278,7 +285,7 @@
                     } catch (e) {
                         setDebugLog('Excepción de red: ' + e.message);
                     }
-                }, 3000); // Cada 3 segundos para asegurar estabilidad de red
+                }, 3000);
             };
 
             useEffect(() => {
@@ -296,17 +303,28 @@
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 p-4 max-w-xl mx-auto flex flex-col gap-4 font-sans select-none">
                     
-                    {/* CONFIGURACIÓN API KEY */}
-                    <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col gap-2">
-                        <label className="text-xs font-bold text-slate-300">Tu API Key de Gemini:</label>
-                        <input 
-                            type="password" 
-                            placeholder="Pega tu clave de API aquí..." 
-                            value={apiKey} 
-                            onChange={(e) => saveApiKey(e.target.value)}
-                            className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                        />
-                    </div>
+                    {/* FORMULARIO API KEY CORREGIDO CON BOTÓN DE SUBMIT */}
+                    <form onSubmit={handleSaveKey} className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl flex flex-col gap-2 shadow-md">
+                        <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold text-slate-300">Google Gemini API Key:</label>
+                            {keySaved && <span className="text-[10px] text-emerald-400 font-bold">✓ Guardada</span>}
+                        </div>
+                        <div className="flex gap-2">
+                            <input 
+                                type="password" 
+                                placeholder="Pega tu clave aquí (ej: AIzaSy...)" 
+                                value={apiKeyInput} 
+                                onChange={(e) => setApiKeyInput(e.target.value)}
+                                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 flex-1"
+                            />
+                            <button 
+                                type="submit" 
+                                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2 rounded-xl transition-all active:scale-95 shadow-md cursor-pointer"
+                            >
+                                Guardar Clave
+                            </button>
+                        </div>
+                    </form>
 
                     <header className="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg">
                         <div className="flex items-center gap-3">
@@ -318,7 +336,7 @@
                         </div>
                         <div className="flex flex-col items-end">
                             <span className="text-[10px] text-emerald-400 font-semibold">{streamStatus}</span>
-                            <span className="text-[9px] text-slate-500 max-w-[150px] truncate">Debug: {debugLog}</span>
+                            <span className="text-[9px] text-slate-400 max-w-[160px] truncate">Debug: {debugLog}</span>
                         </div>
                     </header>
 
@@ -329,17 +347,17 @@
 
                         {!isStreaming && (
                             <div className="h-48 flex flex-col items-center justify-center p-6 text-center bg-slate-950/60">
-                                <p className="text-xs font-medium text-slate-300 mb-3">Introduce tu API Key e inicia la cámara para comenzar el análisis automático</p>
+                                <p className="text-xs font-medium text-slate-300 mb-2">Guarda tu API Key y pulsa el botón inferior para activar la cámara</p>
                             </div>
                         )}
 
                         <div className="absolute bottom-3 right-3 left-3 flex gap-2">
                             {!isStreaming ? (
-                                <button onClick={startCameraStream} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm py-2.5 px-4 rounded-xl shadow-lg active:scale-95">
+                                <button onClick={startCameraStream} type="button" className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm py-2.5 px-4 rounded-xl shadow-lg active:scale-95 cursor-pointer">
                                     Iniciar Streaming de Cámara
                                 </button>
                             ) : (
-                                <button onClick={stopCameraStream} className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm py-2.5 px-4 rounded-xl shadow-lg active:scale-95">
+                                <button onClick={stopCameraStream} type="button" className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm py-2.5 px-4 rounded-xl shadow-lg active:scale-95 cursor-pointer">
                                     Pausar Streaming
                                 </button>
                             )}
