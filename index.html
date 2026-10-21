@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PokerVision Pro - Streaming Continuo GTO</title>
+    <title>PokerVision Pro - Streaming con IA</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -122,12 +122,14 @@
         };
 
         function App() {
+            const [apiKey, setApiKey] = useState(localStorage.getItem('poker_gemini_key') || '');
             const [holeCards, setHoleCards] = useState([null, null]);
             const [boardCards, setBoardCards] = useState([null, null, null, null, null]);
             const [pot, setPot] = useState(150);
             const [callAmount, setCallAmount] = useState(50);
             const [isStreaming, setIsStreaming] = useState(false);
-            const [streamStatus, setStreamStatus] = useState('Inactivo');
+            const [streamStatus, setStreamStatus] = useState('Inactivo (Introduce tu API Key)');
+            const [debugLog, setDebugLog] = useState('Esperando inicio...');
             const [rng, setRng] = useState(null);
 
             const videoRef = useRef(null);
@@ -136,9 +138,14 @@
 
             const equity = useMemo(() => runMonteCarlo(holeCards, boardCards), [holeCards, boardCards]);
 
+            const saveApiKey = (key) => {
+                setApiKey(key);
+                localStorage.setItem('poker_gemini_key', key);
+            };
+
             const decision = useMemo(() => {
                 const validHole = holeCards.filter(Boolean);
-                if (validHole.length < 2) return { action: 'INICIA LA CÁMARA EN VIVO', sizing: 'La IA escaneará tus cartas automáticamente', color: 'slate', potOdds: 0, mdf: 100 };
+                if (validHole.length < 2) return { action: 'CONFIGURA TUS CARTAS O CÁMARA', sizing: 'La IA actualizará las decisiones en tiempo real', color: 'slate', potOdds: 0, mdf: 100 };
 
                 const potOdds = callAmount > 0 ? Math.round((callAmount / (pot + callAmount)) * 100) : 0;
                 const mdf = callAmount > 0 ? Math.round((pot / (pot + callAmount)) * 100) : 100;
@@ -159,6 +166,10 @@
             }, [holeCards, boardCards, pot, callAmount, equity]);
 
             const startCameraStream = async () => {
+                if (!apiKey) {
+                    alert("Por favor, introduce tu clave de API de Gemini en el campo superior.");
+                    return;
+                }
                 try {
                     const constraints = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } };
                     const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -167,10 +178,11 @@
                         await videoRef.current.play();
                     }
                     setIsStreaming(true);
-                    setStreamStatus('Streaming Activo (IA Analizando)');
+                    setStreamStatus('Streaming Activo');
                     runContinuousVisionLoop();
                 } catch (err) {
-                    setStreamStatus('Error: Permiso de cámara denegado');
+                    setStreamStatus('Error de permisos de cámara');
+                    setDebugLog('Error getUserMedia: ' + err.message);
                 }
             };
 
@@ -188,7 +200,7 @@
                 if (streamTimerRef.current) clearInterval(streamTimerRef.current);
 
                 streamTimerRef.current = setInterval(async () => {
-                    if (!videoRef.current || !canvasRef.current) return;
+                    if (!videoRef.current || !canvasRef.current || !apiKey) return;
                     const video = videoRef.current;
                     const canvas = canvasRef.current;
                     canvas.width = video.videoWidth || 640;
@@ -199,29 +211,46 @@
                     const base64Data = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
                     if (!base64Data) return;
 
-                    const apiKey = ""; // Inserta tu clave API de Gemini aquí
                     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-                    const prompt = `Analiza esta mesa de póker en tiempo real. Devuelve estrictamente un JSON válido con:
-                    - holeCards: array de 2 strings (ej: ["Ah", "Kd"]) o null si no se ven
-                    - boardCards: array de hasta 5 cartas (ej: ["10s", "Jd", "2c"])
-                    - pot: número con el bote actual
-                    - callAmount: número de la apuesta a igualar`;
+                    const prompt = `Analiza esta mesa de póker en tiempo real. Responde ÚNICAMENTE con un objeto JSON válido que contenga exactamente estas claves:
+                    - "holeCards": array de 2 strings con formato de carta (ej: ["Ah", "Kd"]) o null si no se ven claramente.
+                    - "boardCards": array de hasta 5 strings con formato de carta (ej: ["10s", "Jd", "2c"]).
+                    - "pot": número entero con el bote actual en fichas.
+                    - "callAmount": número entero con la apuesta a igualar.`;
 
                     try {
+                        setDebugLog('Enviando fotograma a Gemini...');
                         const res = await fetch(apiUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64Data } }] }],
+                                contents: [{
+                                    role: 'user',
+                                    parts: [
+                                        { text: prompt },
+                                        { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+                                    ]
+                                }],
                                 generationConfig: { responseMimeType: 'application/json' }
                             })
                         });
-                        const json = await res.json();
-                        const parsed = JSON.parse(json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
 
-                        if (parsed.holeCards && parsed.holeCards.length >= 2) {
+                        const json = await res.json();
+                        if (json.error) {
+                            setDebugLog('Error API: ' + json.error.message);
+                            return;
+                        }
+
+                        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (!rawText) return;
+
+                        const parsed = JSON.parse(rawText);
+                        setDebugLog('¡IA OK! Detectado pot: ' + parsed.pot);
+
+                        if (parsed.holeCards && Array.isArray(parsed.holeCards) && parsed.holeCards.length >= 2) {
                             const parseCard = (str) => {
+                                if (!str || typeof str !== 'string' || str.length < 2) return null;
                                 const r = RANKS.find(x => x.label.toUpperCase() === str.slice(0, -1).toUpperCase());
                                 const s = SUITS.find(x => x.id === str.slice(-1).toLowerCase());
                                 return r && s ? { rank: r.value, suit: s.id, label: r.label, symbol: s.symbol } : null;
@@ -230,17 +259,26 @@
                             const h1 = parseCard(parsed.holeCards[1]);
                             if (h0 && h1) setHoleCards([h0, h1]);
                         }
+
                         if (parsed.boardCards && Array.isArray(parsed.boardCards)) {
+                            const parseCard = (str) => {
+                                if (!str || typeof str !== 'string' || str.length < 2) return null;
+                                const r = RANKS.find(x => x.label.toUpperCase() === str.slice(0, -1).toUpperCase());
+                                const s = SUITS.find(x => x.id === str.slice(-1).toLowerCase());
+                                return r && s ? { rank: r.value, suit: s.id, label: r.label, symbol: s.symbol } : null;
+                            };
                             const b = [null, null, null, null, null];
                             parsed.boardCards.forEach((c, i) => { if (i < 5) b[i] = parseCard(c); });
                             setBoardCards(b);
                         }
-                        if (parsed.pot) setPot(Number(parsed.pot));
+
+                        if (parsed.pot !== undefined) setPot(Number(parsed.pot));
                         if (parsed.callAmount !== undefined) setCallAmount(Number(parsed.callAmount));
+
                     } catch (e) {
-                        setStreamStatus('Sincronizando fotograma...');
+                        setDebugLog('Excepción de red: ' + e.message);
                     }
-                }, 2000); // Envía un fotograma cada 2 segundos automáticamente
+                }, 3000); // Cada 3 segundos para asegurar estabilidad de red
             };
 
             useEffect(() => {
@@ -258,6 +296,18 @@
             return (
                 <div className="min-h-screen bg-slate-950 text-slate-100 p-4 max-w-xl mx-auto flex flex-col gap-4 font-sans select-none">
                     
+                    {/* CONFIGURACIÓN API KEY */}
+                    <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col gap-2">
+                        <label className="text-xs font-bold text-slate-300">Tu API Key de Gemini:</label>
+                        <input 
+                            type="password" 
+                            placeholder="Pega tu clave de API aquí..." 
+                            value={apiKey} 
+                            onChange={(e) => saveApiKey(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        />
+                    </div>
+
                     <header className="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-lg">♠</div>
@@ -266,30 +316,30 @@
                                 <p className="text-xs text-slate-400">Asistente en Tiempo Real</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-                            <span className={`w-2.5 h-2.5 rounded-full ${isStreaming ? 'bg-emerald-500 animate-ping' : 'bg-slate-600'}`} />
-                            <span className="text-xs font-semibold text-slate-300">{streamStatus}</span>
+                        <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-emerald-400 font-semibold">{streamStatus}</span>
+                            <span className="text-[9px] text-slate-500 max-w-[150px] truncate">Debug: {debugLog}</span>
                         </div>
                     </header>
 
-                    {/* VISOR DE CÁMARA EN DIRECTO */}
+                    {/* VISOR DE CÁMARA */}
                     <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-                        <video ref={videoRef} playsInline muted autoPlay className={`w-full h-52 object-cover ${isStreaming ? 'block' : 'hidden'}`} />
+                        <video ref={videoRef} playsInline muted autoPlay className={`w-full h-48 object-cover ${isStreaming ? 'block' : 'hidden'}`} />
                         <canvas ref={canvasRef} className="hidden" />
 
                         {!isStreaming && (
-                            <div className="h-52 flex flex-col items-center justify-center p-6 text-center bg-slate-950/60">
-                                <p className="text-sm font-medium text-slate-300 mb-3">Activa la cámara para iniciar el escaneo continuo de tu mesa</p>
+                            <div className="h-48 flex flex-col items-center justify-center p-6 text-center bg-slate-950/60">
+                                <p className="text-xs font-medium text-slate-300 mb-3">Introduce tu API Key e inicia la cámara para comenzar el análisis automático</p>
                             </div>
                         )}
 
                         <div className="absolute bottom-3 right-3 left-3 flex gap-2">
                             {!isStreaming ? (
-                                <button onClick={startCameraStream} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm py-3 px-4 rounded-xl shadow-lg transition-transform active:scale-95">
+                                <button onClick={startCameraStream} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm py-2.5 px-4 rounded-xl shadow-lg active:scale-95">
                                     Iniciar Streaming de Cámara
                                 </button>
                             ) : (
-                                <button onClick={stopCameraStream} className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm py-3 px-4 rounded-xl shadow-lg transition-transform active:scale-95">
+                                <button onClick={stopCameraStream} className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm py-2.5 px-4 rounded-xl shadow-lg active:scale-95">
                                     Pausar Streaming
                                 </button>
                             )}
@@ -314,9 +364,9 @@
                         </div>
                     </div>
 
-                    {/* CARTAS DETECTADAS AUTOMÁTICAMENTE */}
+                    {/* CARTAS DETECTADAS */}
                     <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3 shadow-md">
-                        <span className="text-xs font-semibold text-slate-300">Cartas detectadas por la IA en tiempo real</span>
+                        <span className="text-xs font-semibold text-slate-300">Cartas detectadas por la IA</span>
                         
                         <div className="flex justify-center gap-3">
                             {[0, 1].map(i => {
