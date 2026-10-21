@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PokerVision Pro - GTO Web</title>
+    <title>PokerVision Pro - Streaming GTO</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React y ReactDOM -->
@@ -221,7 +221,8 @@
                     const base64Data = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
                     if (!base64Data) return;
 
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                    // Endpoint actualizado con Gemini 2.5 Flash
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
                     const prompt = `Analiza esta mesa de póker en tiempo real. Responde ÚNICAMENTE con un objeto JSON válido que contenga exactamente estas claves:
                     - "holeCards": array de 2 strings con formato de carta (ej: ["Ah", "Kd"]) o null si no se ven claramente.
@@ -298,7 +299,7 @@
             const actionColors = {
                 emerald: 'bg-emerald-500 text-slate-950 border-emerald-400',
                 blue: 'bg-blue-600 text-white border-blue-500',
-                amber: 'bg-amber-500 text-slate-950 border-emerald-400',
+                amber: 'bg-amber-500 text-slate-950 border-amber-400',
                 red: 'bg-rose-600 text-white border-rose-500',
                 slate: 'bg-slate-900 text-slate-300 border-slate-800'
             }[decision.color];
