@@ -1,378 +1,388 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Camera, Sparkles, User, RefreshCw, Play, Square, Check } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PokerVision Web - Entrenador GTO</title>
+    <!-- Tailwind CSS para los estilos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React y ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel para compilar JSX en el navegador en tiempo real -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+    <div id="root"></div>
 
-// ==========================================
-// CONFIGURACIÓN DE PÓKER Y BARAJA
-// ==========================================
-const RANKS = [
-  { value: 14, label: 'A' }, { value: 13, label: 'K' }, { value: 12, label: 'Q' }, 
-  { value: 11, label: 'J' }, { value: 10, label: '10' }, { value: 9, label: '9' }, 
-  { value: 8, label: '8' }, { value: 7, label: '7' }, { value: 6, label: '6' }, 
-  { value: 5, label: '5' }, { value: 4, label: '4' }, { value: 3, label: '3' }, { value: 2, label: '2' }
-];
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
 
-const SUITS = [
-  { id: 's', symbol: '♠', name: 'Picas', color: 'text-slate-950 bg-slate-100 border-slate-300' },
-  { id: 'h', symbol: '♥', name: 'Corazones', color: 'text-red-600 bg-red-50 border-red-200' },
-  { id: 'd', symbol: '♦', name: 'Diamantes', color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  { id: 'c', symbol: '♣', name: 'Tréboles', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-];
+        const RANKS = [
+            { value: 14, label: 'A' }, { value: 13, label: 'K' }, { value: 12, label: 'Q' }, 
+            { value: 11, label: 'J' }, { value: 10, label: '10' }, { value: 9, label: '9' }, 
+            { value: 8, label: '8' }, { value: 7, label: '7' }, { value: 6, label: '6' }, 
+            { value: 5, label: '5' }, { value: 4, label: '4' }, { value: 3, label: '3' }, { value: 2, label: '2' }
+        ];
 
-const createFullDeck = () => {
-  const deck = [];
-  for (const r of RANKS) {
-    for (const s of SUITS) {
-      deck.push({ rank: r.value, suit: s.id, label: r.label, symbol: s.symbol });
-    }
-  }
-  return deck;
-};
+        const SUITS = [
+            { id: 's', symbol: '♠', name: 'Picas', color: 'text-slate-900 bg-slate-100 border-slate-300' },
+            { id: 'h', symbol: '♥', name: 'Corazones', color: 'text-red-600 bg-red-50 border-red-200' },
+            { id: 'd', symbol: '♦', name: 'Diamantes', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+            { id: 'c', symbol: '♣', name: 'Tréboles', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+        ];
 
-// ==========================================
-// MOTOR DE EVALUACIÓN Y MONTE CARLO
-// ==========================================
-const evaluate7Cards = (cards) => {
-  if (!cards || cards.length === 0) return { category: 0, name: 'Sin Cartas', score: 0 };
-  const rankCounts = {};
-  const suitCards = { s: [], h: [], d: [], c: [] };
-  cards.forEach(c => {
-    rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1;
-    if (suitCards[c.suit]) suitCards[c.suit].push(c.rank);
-  });
-  const uniqueRanks = Object.keys(rankCounts).map(Number).sort((a, b) => b - a);
+        const createFullDeck = () => {
+            const deck = [];
+            for (const r of RANKS) {
+                for (const s of SUITS) {
+                    deck.push({ rank: r.value, suit: s.id, label: r.label, symbol: s.symbol });
+                }
+            }
+            return deck;
+        };
 
-  const findStraight = (rankList) => {
-    const set = new Set(rankList);
-    if (set.has(14)) set.add(1);
-    const sorted = Array.from(set).sort((a, b) => b - a);
-    let consecutive = 1;
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (sorted[i] - sorted[i + 1] === 1) {
-        consecutive++;
-        if (consecutive >= 5) return sorted[i - 3];
-      } else {
-        consecutive = 1;
-      }
-    }
-    return 0;
-  };
+        const evaluate7Cards = (cards) => {
+            if (!cards || cards.length === 0) return { category: 0, name: 'Sin Cartas', score: 0 };
+            const rankCounts = {};
+            const suitCards = { s: [], h: [], d: [], c: [] };
+            cards.forEach(c => {
+                rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1;
+                if (suitCards[c.suit]) suitCards[c.suit].push(c.rank);
+            });
+            const uniqueRanks = Object.keys(rankCounts).map(Number).sort((a, b) => b - a);
 
-  let flushSuit = null;
-  for (const s of ['s', 'h', 'd', 'c']) {
-    if (suitCards[s].length >= 5) { flushSuit = s; break; }
-  }
+            const findStraight = (rankList) => {
+                const set = new Set(rankList);
+                if (set.has(14)) set.add(1);
+                const sorted = Array.from(set).sort((a, b) => b - a);
+                let consecutive = 1;
+                for (let i = 0; i < sorted.length - 1; i++) {
+                    if (sorted[i] - sorted[i + 1] === 1) {
+                        consecutive++;
+                        if (consecutive >= 5) return sorted[i - 3];
+                    } else {
+                        consecutive = 1;
+                    }
+                }
+                return 0;
+            };
 
-  if (flushSuit) {
-    const flushRanks = suitCards[flushSuit].sort((a, b) => b - a);
-    const sfHigh = findStraight(flushRanks);
-    if (sfHigh > 0) return { category: 8, name: sfHigh === 14 ? 'Escalera Real' : 'Escalera de Color', score: 8000000 + sfHigh };
-  }
+            let flushSuit = null;
+            for (const s of ['s', 'h', 'd', 'c']) {
+                if (suitCards[s].length >= 5) { flushSuit = s; break; }
+            }
 
-  const quads = [], trips = [], pairs = [];
-  for (const r of uniqueRanks) {
-    const count = rankCounts[r];
-    if (count === 4) quads.push(r);
-    else if (count === 3) trips.push(r);
-    else if (count === 2) pairs.push(r);
-  }
+            if (flushSuit) {
+                const flushRanks = suitCards[flushSuit].sort((a, b) => b - a);
+                const sfHigh = findStraight(flushRanks);
+                if (sfHigh > 0) return { category: 8, name: sfHigh === 14 ? 'Escalera Real' : 'Escalera de Color', score: 8000000 + sfHigh };
+            }
 
-  if (quads.length > 0) return { category: 7, name: 'Póker', score: 7000000 + quads[0] * 100 };
-  if (trips.length >= 2 || (trips.length === 1 && pairs.length >= 1)) return { category: 6, name: 'Full House', score: 6000000 + trips[0] * 100 };
-  if (flushSuit) return { category: 5, name: 'Color', score: 5000000 };
-  const straightHigh = findStraight(uniqueRanks);
-  if (straightHigh > 0) return { category: 4, name: 'Escalera', score: 4000000 + straightHigh };
-  if (trips.length > 0) return { category: 3, name: 'Trío', score: 3000000 + trips[0] * 500 };
-  if (pairs.length >= 2) return { category: 2, name: 'Doble Pareja', score: 2000000 + pairs[0] * 500 };
-  if (pairs.length === 1) return { category: 1, name: 'Pareja', score: 1000000 + pairs[0] * 4000 };
-  return { category: 0, name: 'Carta Alta', score: uniqueRanks[0] || 0 };
-};
+            const quads = [], trips = [], pairs = [];
+            for (const r of uniqueRanks) {
+                const count = rankCounts[r];
+                if (count === 4) quads.push(r);
+                else if (count === 3) trips.push(r);
+                else if (count === 2) pairs.push(r);
+            }
 
-const runMonteCarlo = (hole, board, iterations = 120) => {
-  const validHole = hole.filter(Boolean);
-  const validBoard = board.filter(Boolean);
-  if (validHole.length < 2) return 50;
-  const known = [...validHole, ...validBoard];
-  const deck = createFullDeck().filter(d => !known.some(k => k.rank === d.rank && k.suit === d.suit));
+            if (quads.length > 0) return { category: 7, name: 'Póker', score: 7000000 + quads[0] * 100 };
+            if (trips.length >= 2 || (trips.length === 1 && pairs.length >= 1)) return { category: 6, name: 'Full House', score: 6000000 + trips[0] * 100 };
+            if (flushSuit) return { category: 5, name: 'Color', score: 5000000 };
+            const straightHigh = findStraight(uniqueRanks);
+            if (straightHigh > 0) return { category: 4, name: 'Escalera', score: 4000000 + straightHigh };
+            if (trips.length > 0) return { category: 3, name: 'Trío', score: 3000000 + trips[0] * 500 };
+            if (pairs.length >= 2) return { category: 2, name: 'Doble Pareja', score: 2000000 + pairs[0] * 500 };
+            if (pairs.length === 1) return { category: 1, name: 'Pareja', score: 1000000 + pairs[0] * 4000 };
+            return { category: 0, name: 'Carta Alta', score: uniqueRanks[0] || 0 };
+        };
 
-  let wins = 0;
-  const neededBoard = Math.max(0, 5 - validBoard.length);
+        const runMonteCarlo = (hole, board, iterations = 100) => {
+            const validHole = hole.filter(Boolean);
+            const validBoard = board.filter(Boolean);
+            if (validHole.length < 2) return 50;
+            const known = [...validHole, ...validBoard];
+            const deck = createFullDeck().filter(d => !known.some(k => k.rank === d.rank && k.suit === d.suit));
 
-  for (let i = 0; i < iterations; i++) {
-    const dCopy = [...deck];
-    for (let j = 0; j < neededBoard + 2; j++) {
-      const r = j + Math.floor(Math.random() * (dCopy.length - j));
-      const temp = dCopy[j]; dCopy[j] = dCopy[r]; dCopy[r] = temp;
-    }
-    const simBoard = [...validBoard, ...dCopy.slice(0, neededBoard)];
-    const vHole = [dCopy[neededBoard], dCopy[neededBoard + 1]];
+            let wins = 0;
+            const neededBoard = Math.max(0, 5 - validBoard.length);
 
-    const heroScore = evaluate7Cards([...validHole, ...simBoard]).score;
-    const villainScore = evaluate7Cards([...vHole, ...simBoard]).score;
+            for (let i = 0; i < iterations; i++) {
+                const dCopy = [...deck];
+                for (let j = 0; j < neededBoard + 2; j++) {
+                    const r = j + Math.floor(Math.random() * (dCopy.length - j));
+                    const temp = dCopy[j]; dCopy[j] = dCopy[r]; dCopy[r] = temp;
+                }
+                const simBoard = [...validBoard, ...dCopy.slice(0, neededBoard)];
+                const vHole = [dCopy[neededBoard], dCopy[neededBoard + 1]];
 
-    if (heroScore > villainScore) wins++;
-    else if (heroScore === villainScore) wins += 0.5;
-  }
-  return Math.round((wins / iterations) * 100);
-};
+                const heroScore = evaluate7Cards([...validHole, ...simBoard]).score;
+                const villainScore = evaluate7Cards([...vHole, ...simBoard]).score;
 
-// ==========================================
-// COMPONENTE PRINCIPAL PARA NAVEGADOR
-// ==========================================
-export default function App() {
-  const [holeCards, setHoleCards] = useState([null, null]);
-  const [boardCards, setBoardCards] = useState([null, null, null, null, null]);
-  const [pot, setPot] = useState(200);
-  const [callAmount, setCallAmount] = useState(60);
-  const [activeSlot, setActiveSlot] = useState(null); 
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [rng, setRng] = useState(null);
+                if (heroScore > villainScore) wins++;
+                else if (heroScore === villainScore) wins += 0.5;
+            }
+            return Math.round((wins / iterations) * 100);
+        };
 
-  const equity = useMemo(() => runMonteCarlo(holeCards, boardCards), [holeCards, boardCards]);
+        function App() {
+            const [holeCards, setHoleCards] = useState([null, null]);
+            const [boardCards, setBoardCards] = useState([null, null, null, null, null]);
+            const [pot, setPot] = useState(200);
+            const [callAmount, setCallAmount] = useState(60);
+            const [activeSlot, setActiveSlot] = useState(null);
+            const [loadingAI, setLoadingAI] = useState(false);
+            const [rng, setRng] = useState(null);
 
-  // Motor GTO Híbrido 98% + 2%
-  const decision = useMemo(() => {
-    const validHole = holeCards.filter(Boolean);
-    if (validHole.length < 2) return { action: 'SELECCIONA TUS CARTAS', sizing: 'Usa la cámara o toca los huecos abajo', color: 'slate', potOdds: 0, mdf: 100 };
+            const equity = useMemo(() => runMonteCarlo(holeCards, boardCards), [holeCards, boardCards]);
 
-    const potOdds = callAmount > 0 ? Math.round((callAmount / (pot + callAmount)) * 100) : 0;
-    const mdf = callAmount > 0 ? Math.round((pot / (pot + callAmount)) * 100) : 100;
+            const decision = useMemo(() => {
+                const validHole = holeCards.filter(Boolean);
+                if (validHole.length < 2) return { action: 'SELECCIONA TUS CARTAS', sizing: 'Toca los recuadros de arriba para configurar', color: 'slate', potOdds: 0, mdf: 100 };
 
-    let action = 'CHECK / PASAR';
-    let sizing = '0 fichas';
-    let color = 'amber';
+                const potOdds = callAmount > 0 ? Math.round((callAmount / (pot + callAmount)) * 100) : 0;
+                const mdf = callAmount > 0 ? Math.round((pot / (pot + callAmount)) * 100) : 100;
 
-    if (callAmount === 0) {
-      if (equity >= 58) {
-        action = 'APOSTAR (98% GTO)';
-        sizing = `${Math.round(pot * 0.65)} fichas (65% Pot)`;
-        color = 'emerald';
-      } else if (equity >= 38) {
-        action = 'APUESTA SEMI-BLUFF';
-        sizing = `${Math.round(pot * 0.35)} fichas (35% Pot)`;
-        color = 'emerald';
-      }
-    } else {
-      if (equity >= potOdds + 4) {
-        action = 'SUBIR / RAISE';
-        sizing = `Subir a ${Math.round(callAmount * 2.5)} fichas`;
-        color = 'emerald';
-      } else if (equity >= potOdds - 3) {
-        action = 'IGUALAR (CALL)';
-        sizing = `Pagar ${callAmount} fichas`;
-        color = 'blue';
-      } else {
-        action = 'ABANDONAR (FOLD)';
-        sizing = `Ahorrar ${callAmount} fichas`;
-        color = 'red';
-      }
-    }
-    return { action, sizing, color, potOdds, mdf };
-  }, [holeCards, boardCards, pot, callAmount, equity]);
+                let action = 'CHECK / PASAR';
+                let sizing = '0 fichas';
+                let color = 'amber';
 
-  // Análisis de imagen mediante API de Gemini en el Navegador
-  const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+                if (callAmount === 0) {
+                    if (equity >= 58) {
+                        action = 'APOSTAR (98% GTO)';
+                        sizing = `${Math.round(pot * 0.65)} fichas (65% Pot)`;
+                        color = 'emerald';
+                    } else if (equity >= 38) {
+                        action = 'APUESTA SEMI-BLUFF';
+                        sizing = `${Math.round(pot * 0.35)} fichas (35% Pot)`;
+                        color = 'emerald';
+                    }
+                } else {
+                    if (equity >= potOdds + 4) {
+                        action = 'SUBIR / RAISE';
+                        sizing = `Subir a ${Math.round(callAmount * 2.5)} fichas`;
+                        color = 'emerald';
+                    } else if (equity >= potOdds - 3) {
+                        action = 'IGUALAR (CALL)';
+                        sizing = `Pagar ${callAmount} fichas`;
+                        color = 'blue';
+                    } else {
+                        action = 'ABANDONAR (FOLD)';
+                        sizing = `Ahorrar ${callAmount} fichas`;
+                        color = 'red';
+                    }
+                }
+                return { action, sizing, color, potOdds, mdf };
+            }, [holeCards, boardCards, pot, callAmount, equity]);
 
-    setLoadingAI(true);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64String = reader.result.split(',')[1];
-      const apiKey = ""; // Inserta tu clave API de Gemini aquí si deseas consultar la IA
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+            const handleImageUpload = async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
 
-      const prompt = `Analiza esta mesa de póker. Devuelve estrictamente un JSON válido con:
-      - holeCards: array de 2 strings (ej: ["Ah", "Kd"])
-      - boardCards: array de hasta 5 cartas (ej: ["10s", "Jd", "2c"])
-      - pot: número con el bote
-      - callAmount: número a igualar`;
+                setLoadingAI(true);
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const base64String = reader.result.split(',')[1];
+                    const apiKey = ""; // Inserta tu clave de Gemini API si deseas usar IA fotográfica
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-      try {
-        const res = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64String } }] }],
-            generationConfig: { responseMimeType: 'application/json' }
-          })
-        });
-        const json = await res.json();
-        const parsed = JSON.parse(json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+                    const prompt = `Analiza esta mesa de póker. Devuelve estrictamente un JSON válido con:
+                    - holeCards: array de 2 strings (ej: ["Ah", "Kd"])
+                    - boardCards: array de hasta 5 cartas (ej: ["10s", "Jd", "2c"])
+                    - pot: número con el bote
+                    - callAmount: número a igualar`;
 
-        if (parsed.holeCards && parsed.holeCards.length >= 2) {
-          const parseCard = (str) => {
-            const r = RANKS.find(x => x.label.toUpperCase() === str.slice(0, -1).toUpperCase());
-            const s = SUITS.find(x => x.id === str.slice(-1).toLowerCase());
-            return r && s ? { rank: r.value, suit: s.id, label: r.label, symbol: s.symbol } : null;
-          };
-          const h0 = parseCard(parsed.holeCards[0]);
-          const h1 = parseCard(parsed.holeCards[1]);
-          if (h0 && h1) setHoleCards([h0, h1]);
+                    try {
+                        const res = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64String } }] }],
+                                generationConfig: { responseMimeType: 'application/json' }
+                            })
+                        });
+                        const json = await res.json();
+                        const parsed = JSON.parse(json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+
+                        if (parsed.holeCards && parsed.holeCards.length >= 2) {
+                            const parseCard = (str) => {
+                                const r = RANKS.find(x => x.label.toUpperCase() === str.slice(0, -1).toUpperCase());
+                                const s = SUITS.find(x => x.id === str.slice(-1).toLowerCase());
+                                return r && s ? { rank: r.value, suit: s.id, label: r.label, symbol: s.symbol } : null;
+                            };
+                            const h0 = parseCard(parsed.holeCards[0]);
+                            const h1 = parseCard(parsed.holeCards[1]);
+                            if (h0 && h1) setHoleCards([h0, h1]);
+                        }
+                        if (parsed.pot) setPot(Number(parsed.pot));
+                        if (parsed.callAmount !== undefined) setCallAmount(Number(parsed.callAmount));
+                    } catch (err) {
+                        alert("No se pudo conectar con la IA, utiliza el selector manual en pantalla.");
+                    } finally {
+                        setLoadingAI(false);
+                    }
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const selectCardForActiveSlot = (card) => {
+                if (!activeSlot) return;
+                if (activeSlot === 'h0') setHoleCards([card, holeCards[1]]);
+                if (activeSlot === 'h1') setHoleCards([holeCards[0], card]);
+                if (activeSlot.startsWith('b')) {
+                    const idx = parseInt(activeSlot[1]);
+                    const newBoard = [...boardCards];
+                    newBoard[idx] = card;
+                    setBoardCards(newBoard);
+                }
+                setActiveSlot(null);
+            };
+
+            const actionColors = {
+                emerald: 'bg-emerald-500 text-slate-950 border-emerald-400',
+                blue: 'bg-blue-600 text-white border-blue-500',
+                amber: 'bg-amber-500 text-slate-950 border-amber-400',
+                red: 'bg-rose-600 text-white border-rose-500',
+                slate: 'bg-slate-900 text-slate-300 border-slate-800'
+            }[decision.color];
+
+            return (
+                <div className="min-h-screen bg-slate-950 text-slate-100 p-4 max-w-xl mx-auto flex flex-col gap-4 font-sans select-none">
+                    
+                    {/* CABECERA */}
+                    <header className="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-lg">♠</div>
+                            <div>
+                                <h1 className="font-extrabold text-base text-white">PokerVision <span className="text-emerald-400">Web</span></h1>
+                                <p className="text-xs text-slate-400">Entrenador GTO para Navegador</p>
+                            </div>
+                        </div>
+                        
+                        <label className="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all">
+                            <span>{loadingAI ? 'Analizando...' : 'Subir Captura'}</span>
+                            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                        </label>
+                    </header>
+
+                    {/* HUD DE DECISIÓN GTO ÓPTIMA */}
+                    <div className={`border-2 rounded-2xl p-5 shadow-xl transition-all ${actionColors}`}>
+                        <div className="flex justify-between items-center text-xs font-bold opacity-90 uppercase tracking-widest mb-1.5">
+                            <span>Recomendación GTO (Navegador)</span>
+                            <span>Equity: {equity}%</span>
+                        </div>
+                        <div className="text-3xl font-black tracking-tight">{decision.action}</div>
+                        <div className="text-sm font-semibold opacity-90 mt-1">{decision.sizing}</div>
+                        
+                        <div className="mt-4 pt-3 border-t border-black/10 flex justify-between text-xs font-medium opacity-90">
+                            <span>Pot Odds: {decision.potOdds}%</span>
+                            <span>MDF: {decision.mdf}%</span>
+                            <button onClick={() => setRng(Math.floor(Math.random() * 100) + 1)} className="underline font-bold cursor-pointer hover:opacity-80">
+                                RNG (1-100): {rng !== null ? rng : 'Girar'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* ZONA DE CARTAS TÁCTICAS */}
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-4 shadow-md">
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-slate-300">Configuración de Mesa (Haz clic para cambiar cartas)</span>
+                            <button onClick={() => { setHoleCards([null, null]); setBoardCards([null, null, null, null, null]); }} className="text-slate-400 text-xs hover:text-white">
+                                Limpiar Mesa
+                            </button>
+                        </div>
+
+                        {/* Tus Cartas */}
+                        <div className="text-center">
+                            <span className="text-[11px] text-slate-400 block mb-2 font-medium">Tus Cartas Ocultas (Hole Cards)</span>
+                            <div className="flex justify-center gap-3">
+                                {[0, 1].map(i => {
+                                    const c = holeCards[i];
+                                    const s = c ? SUITS.find(x => x.id === c.suit) : null;
+                                    const isSelected = activeSlot === `h${i}`;
+                                    return (
+                                        <div
+                                            key={`h-${i}`}
+                                            onClick={() => setActiveSlot(`h${i}`)}
+                                            className={`w-16 h-24 rounded-xl border-2 flex flex-col items-center justify-between p-2.5 cursor-pointer transition-all hover:scale-105 ${isSelected ? 'border-emerald-400 ring-2 ring-emerald-500/40 scale-105' : 'border-slate-700'} bg-slate-950 ${c ? s.color : 'text-slate-600'}`}
+                                        >
+                                            {c ? <><span className="text-xs font-bold">{c.label}</span><span className="text-2xl">{s.symbol}</span><span className="text-[10px] self-end">{c.label}</span></> : <span className="text-xl text-slate-600 my-auto">?</span>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Board Comunitarias */}
+                        <div className="pt-3 border-t border-slate-800 text-center">
+                            <span className="text-[11px] text-slate-400 block mb-2 font-medium">Cartas Comunitarias (Flop, Turn, River)</span>
+                            <div className="flex justify-center gap-2">
+                                {[0, 1, 2, 3, 4].map(i => {
+                                    const c = boardCards[i];
+                                    const s = c ? SUITS.find(x => x.id === c.suit) : null;
+                                    const isSelected = activeSlot === `b${i}`;
+                                    return (
+                                        <div
+                                            key={`b-${i}`}
+                                            onClick={() => setActiveSlot(`b${i}`)}
+                                            className={`w-14 h-20 rounded-xl border flex flex-col items-center justify-between p-2 cursor-pointer transition-all hover:scale-105 ${isSelected ? 'border-emerald-400 ring-2 ring-emerald-500/40 scale-105' : 'border-slate-800'} bg-slate-950 ${c ? s.color : 'text-slate-700'}`}
+                                        >
+                                            {c ? <><span className="text-[10px] font-bold">{c.label}</span><span className="text-lg">{s.symbol}</span></> : <span className="text-xs text-slate-700 my-auto">-</span>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SELECTOR RÁPIDO DE CARTA */}
+                    {activeSlot && (
+                        <div className="bg-slate-900 border-2 border-emerald-500/50 p-4 rounded-2xl shadow-2xl">
+                            <div className="flex justify-between items-center mb-3">
+                                <span className="text-xs font-bold text-emerald-400">Selecciona carta para ({activeSlot})</span>
+                                <button onClick={() => setActiveSlot(null)} className="text-xs bg-slate-800 px-2.5 py-1 rounded-lg text-slate-300 hover:bg-slate-700">Cerrar</button>
+                            </div>
+                            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 max-h-56 overflow-y-auto p-1">
+                                {createFullDeck().map((card, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => selectCardForActiveSlot(card)}
+                                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform ${SUITS.find(s => s.id === card.suit).color}`}
+                                    >
+                                        <span>{card.label}</span>
+                                        <span className="text-sm">{card.symbol}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* CONTROLES DE BOTE Y APUESTA */}
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl grid grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-xs text-slate-400 block mb-1.5 font-medium">Bote Total ($)</span>
+                            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5">
+                                <button onClick={() => setPot(Math.max(10, pot - 20))} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">-</button>
+                                <input type="number" value={pot} onChange={(e) => setPot(Number(e.target.value))} className="w-full bg-transparent text-center font-bold text-sm text-white focus:outline-none" />
+                                <button onClick={() => setPot(pot + 20)} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">+</button>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-xs text-slate-400 block mb-1.5 font-medium">Apuesta a Igualar ($)</span>
+                            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5">
+                                <button onClick={() => setCallAmount(Math.max(0, callAmount - 10))} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">-</button>
+                                <input type="number" value={callAmount} onChange={(e) => setCallAmount(Number(e.target.value))} className="w-full bg-transparent text-center font-bold text-sm text-emerald-400 focus:outline-none" />
+                                <button onClick={() => setCallAmount(callAmount + 10)} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            );
         }
-        if (parsed.pot) setPot(Number(parsed.pot));
-        if (parsed.callAmount !== undefined) setCallAmount(Number(parsed.callAmount));
-      } catch (err) {
-        alert("No se pudo conectar con la IA en este momento, utiliza el selector manual en pantalla.");
-      } finally {
-        setLoadingAI(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
 
-  const selectCardForActiveSlot = (card) => {
-    if (!activeSlot) return;
-    if (activeSlot === 'h0') setHoleCards([card, holeCards[1]]);
-    if (activeSlot === 'h1') setHoleCards([holeCards[0], card]);
-    if (activeSlot.startsWith('b')) {
-      const idx = parseInt(activeSlot[1]);
-      const newBoard = [...boardCards];
-      newBoard[idx] = card;
-      setBoardCards(newBoard);
-    }
-    setActiveSlot(null);
-  };
-
-  const actionColors = {
-    emerald: 'bg-emerald-500 text-slate-950 border-emerald-400',
-    blue: 'bg-blue-600 text-white border-blue-500',
-    amber: 'bg-amber-500 text-slate-950 border-amber-400',
-    red: 'bg-rose-600 text-white border-rose-500',
-    slate: 'bg-slate-900 text-slate-300 border-slate-800'
-  }[decision.color];
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 max-w-xl mx-auto flex flex-col gap-4 font-sans select-none">
-      
-      {/* CABECERA */}
-      <header className="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-lg">♠</div>
-          <div>
-            <h1 className="font-extrabold text-base text-white">PokerVision <span className="text-emerald-400">Web</span></h1>
-            <p className="text-xs text-slate-400">Entrenador GTO para Navegador</p>
-          </div>
-        </div>
-        
-        <label className="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all">
-          <Camera className="w-4 h-4" />
-          <span>{loadingAI ? 'Analizando...' : 'Subir Captura'}</span>
-          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-        </label>
-      </header>
-
-      {/* HUD DE DECISIÓN GTO ÓPTIMA */}
-      <div className={`border-2 rounded-2xl p-5 shadow-xl transition-all ${actionColors}`}>
-        <div className="flex justify-between items-center text-xs font-bold opacity-90 uppercase tracking-widest mb-1.5">
-          <span>Recomendación GTO (Navegador)</span>
-          <span>Equity: {equity}%</span>
-        </div>
-        <div className="text-3xl font-black tracking-tight">{decision.action}</div>
-        <div className="text-sm font-semibold opacity-90 mt-1">{decision.sizing}</div>
-        
-        <div className="mt-4 pt-3 border-t border-black/10 flex justify-between text-xs font-medium opacity-90">
-          <span>Pot Odds: {decision.potOdds}%</span>
-          <span>MDF: {decision.mdf}%</span>
-          <button onClick={() => setRng(Math.floor(Math.random() * 100) + 1)} className="underline font-bold cursor-pointer hover:opacity-80">
-            RNG (1-100): {rng !== null ? rng : 'Girar'}
-          </button>
-        </div>
-      </div>
-
-      {/* ZONA DE CARTAS TÁCTICAS */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-4 shadow-md">
-        <div className="flex justify-between items-center text-xs">
-          <span className="font-semibold text-slate-300">Configuración de Mesa (Haz clic para cambiar cartas)</span>
-          <button onClick={() => { setHoleCards([null, null]); setBoardCards([null, null, null, null, null]); }} className="text-slate-400 text-xs flex items-center gap-1 hover:text-white">
-            <RefreshCw className="w-3 h-3" /> Limpiar Mesa
-          </button>
-        </div>
-
-        {/* Tus Cartas */}
-        <div className="text-center">
-          <span className="text-[11px] text-slate-400 block mb-2 font-medium">Tus Cartas Ocultas (Hole Cards)</span>
-          <div className="flex justify-center gap-3">
-            {[0, 1].map(i => {
-              const c = holeCards[i];
-              const s = c ? SUITS.find(x => x.id === c.suit) : null;
-              const isSelected = activeSlot === `h${i}`;
-              return (
-                <div
-                  key={`h-${i}`}
-                  onClick={() => setActiveSlot(`h${i}`)}
-                  className={`w-16 h-24 rounded-xl border-2 flex flex-col items-center justify-between p-2.5 cursor-pointer transition-all hover:scale-105 ${isSelected ? 'border-emerald-400 ring-2 ring-emerald-500/40 scale-105' : 'border-slate-700'} bg-slate-950 ${c ? s.color : 'text-slate-600'}`}
-                >
-                  {c ? <><span className="text-xs font-bold">{c.label}</span><span className="text-2xl">{s.symbol}</span><span className="text-[10px] self-end">{c.label}</span></> : <span className="text-xl text-slate-600 my-auto">?</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Board Comunitarias */}
-        <div className="pt-3 border-t border-slate-800 text-center">
-          <span className="text-[11px] text-slate-400 block mb-2 font-medium">Cartas Comunitarias (Flop, Turn, River)</span>
-          <div className="flex justify-center gap-2">
-            {[0, 1, 2, 3, 4].map(i => {
-              const c = boardCards[i];
-              const s = c ? SUITS.find(x => x.id === c.suit) : null;
-              const isSelected = activeSlot === `b${i}`;
-              return (
-                <div
-                  key={`b-${i}`}
-                  onClick={() => setActiveSlot(`b${i}`)}
-                  className={`w-14 h-20 rounded-xl border flex flex-col items-center justify-between p-2 cursor-pointer transition-all hover:scale-105 ${isSelected ? 'border-emerald-400 ring-2 ring-emerald-500/40 scale-105' : 'border-slate-800'} bg-slate-950 ${c ? s.color : 'text-slate-700'}`}
-                >
-                  {c ? <><span className="text-[10px] font-bold">{c.label}</span><span className="text-lg">{s.symbol}</span></> : <span className="text-xs text-slate-700 my-auto">-</span>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* SELECTOR RÁPIDO DE CARTA (MODAL DE SELECCIÓN) */}
-      {activeSlot && (
-        <div className="bg-slate-900 border-2 border-emerald-500/50 p-4 rounded-2xl shadow-2xl animate-fade-in">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-xs font-bold text-emerald-400">Selecciona carta para el hueco ({activeSlot})</span>
-            <button onClick={() => setActiveSlot(null)} className="text-xs bg-slate-800 px-2.5 py-1 rounded-lg text-slate-300 hover:bg-slate-700">Cerrar</button>
-          </div>
-          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 max-h-56 overflow-y-auto p-1">
-            {createFullDeck().map((card, idx) => (
-              <button
-                key={idx}
-                onClick={() => selectCardForActiveSlot(card)}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform ${SUITS.find(s => s.id === card.suit).color}`}
-              >
-                <span>{card.label}</span>
-                <span className="text-sm">{card.symbol}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* CONTROLES DE BOTE Y APUESTA */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl grid grid-cols-2 gap-4">
-        <div>
-          <span className="text-xs text-slate-400 block mb-1.5 font-medium">Bote Total ($)</span>
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5">
-            <button onClick={() => setPot(Math.max(10, pot - 20))} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">-</button>
-            <input type="number" value={pot} onChange={(e) => setPot(Number(e.target.value))} className="w-full bg-transparent text-center font-bold text-sm text-white focus:outline-none" />
-            <button onClick={() => setPot(pot + 20)} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">+</button>
-          </div>
-        </div>
-        <div>
-          <span className="text-xs text-slate-400 block mb-1.5 font-medium">Apuesta a Igualar ($)</span>
-          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5">
-            <button onClick={() => setCallAmount(Math.max(0, callAmount - 10))} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">-</button>
-            <input type="number" value={callAmount} onChange={(e) => setCallAmount(Number(e.target.value))} className="w-full bg-transparent text-center font-bold text-sm text-emerald-400 focus:outline-none" />
-            <button onClick={() => setCallAmount(callAmount + 10)} className="text-slate-400 hover:text-white font-bold px-3 py-1 text-base">+</button>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  );
-}
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
