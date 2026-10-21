@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Camera, Play, Square, User } from 'lucide-react';
+import { Camera, RefreshCw, Zap, Shield, User, Play, Square, Settings, Award, Layers, ChevronRight } from 'lucide-react';
 
 // ==========================================
 // CONSTANTES Y CONFIGURACIÓN DE PÓKER
@@ -28,8 +28,8 @@ const ARCHETYPES = {
 };
 
 const DEFAULT_VILLAIN = {
-  id: 'v1', name: 'Rival Activo', hands: 52, vpipCount: 14, pfrCount: 11, 
-  aggroActions: 15, passiveActions: 6, foldToBetCount: 14, facedBetCount: 22
+  id: 'v1', name: 'Rival Activo', hands: 45, vpipCount: 15, pfrCount: 11, 
+  aggroActions: 12, passiveActions: 5, foldToBetCount: 13, facedBetCount: 20
 };
 
 const computeVillainMetrics = (v) => {
@@ -64,7 +64,7 @@ const parseCardString = (str) => {
   if (clean.length < 2) return null;
   let rankChar = clean.slice(0, -1).toUpperCase();
   const suitChar = clean.slice(-1).toLowerCase();
-  if (rankChar === '10') rankChar = '10';
+  if (rankChar === '10' || rankChar === 'T') rankChar = '10';
   const rankObj = RANKS.find(r => r.label === rankChar);
   const suitObj = SUITS.find(s => s.id === suitChar);
   if (rankObj && suitObj) return { rank: rankObj.value, suit: suitObj.id, label: rankObj.label };
@@ -72,7 +72,7 @@ const parseCardString = (str) => {
 };
 
 // ==========================================
-// MOTOR MATEMÁTICO (MONTE CARLO & 98% GTO)
+// EVALUADOR DE MANOS Y MONTE CARLO
 // ==========================================
 
 const evaluate7Cards = (cards) => {
@@ -112,12 +112,13 @@ const evaluate7Cards = (cards) => {
     if (sfHigh > 0) return { category: 8, name: sfHigh === 14 ? 'Escalera Real' : 'Escalera de Color', score: 8000000 + sfHigh };
   }
 
-  const quads = [], trips = [], pairs = [];
+  const quads = [], trips = [], pairs = [], singles = [];
   for (const r of uniqueRanks) {
     const count = rankCounts[r];
     if (count === 4) quads.push(r);
     else if (count === 3) trips.push(r);
     else if (count === 2) pairs.push(r);
+    else singles.push(r);
   }
 
   if (quads.length > 0) return { category: 7, name: 'Póker', score: 7000000 + quads[0] * 100 };
@@ -131,7 +132,7 @@ const evaluate7Cards = (cards) => {
   return { category: 0, name: 'Carta Alta', score: uniqueRanks[0] || 0 };
 };
 
-const runMonteCarlo = (hole, board, iterations = 150) => {
+const runMonteCarlo = (hole, board, iterations = 120) => {
   const validHole = hole.filter(Boolean);
   const validBoard = board.filter(Boolean);
   if (validHole.length < 2) return 50;
@@ -139,7 +140,7 @@ const runMonteCarlo = (hole, board, iterations = 150) => {
   const deck = createFullDeck().filter(d => !known.some(k => k.rank === d.rank && k.suit === d.suit));
 
   let wins = 0;
-  const neededBoard = Math.max(0, 5 - validBoard.length);
+  const neededBoard = 5 - validBoard.length;
 
   for (let i = 0; i < iterations; i++) {
     const dCopy = [...deck];
@@ -160,19 +161,21 @@ const runMonteCarlo = (hole, board, iterations = 150) => {
 };
 
 // ==========================================
-// COMPONENTE PRINCIPAL (VISIÓN CONTINUA)
+// COMPONENTE PRINCIPAL (MÓVIL / ANDROID)
 // ==========================================
 
 export default function App() {
   const [holeCards, setHoleCards] = useState([null, null]);
   const [boardCards, setBoardCards] = useState([null, null, null, null, null]);
-  const [pot, setPot] = useState(120);
-  const [callAmount, setCallAmount] = useState(40);
-
+  const [pot, setPot] = useState(150);
+  const [callAmount, setCallAmount] = useState(50);
   const [villain, setVillain] = useState(DEFAULT_VILLAIN);
+
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamStatus, setStreamStatus] = useState('Inactivo');
   const [rng, setRng] = useState(null);
+  const [activeTab, setActiveTab] = useState('table'); // 'table', 'selector', 'villain'
+  const [editingCardSlot, setEditingCardSlot] = useState(null); // { type: 'hole' | 'board', index: number }
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -184,7 +187,7 @@ export default function App() {
   // Motor GTO Híbrido 98% + 2% Explotativo
   const decision = useMemo(() => {
     const validHole = holeCards.filter(Boolean);
-    if (validHole.length < 2) return { action: 'INICIA CÁMARA O SELECCIONA', sizing: 'La visión continua detectará tus cartas', color: 'slate', potOdds: 0, mdf: 100 };
+    if (validHole.length < 2) return { action: 'SELECCIONA TUS CARTAS', sizing: 'Toca las cartas abajo o usa la cámara', color: 'slate', potOdds: 0, mdf: 100 };
 
     const potOdds = callAmount > 0 ? Math.round((callAmount / (pot + callAmount)) * 100) : 0;
     const mdf = callAmount > 0 ? Math.round((pot / (pot + callAmount)) * 100) : 100;
@@ -221,22 +224,22 @@ export default function App() {
     return { action, sizing, color, potOdds, mdf };
   }, [holeCards, boardCards, pot, callAmount, equity]);
 
-  // Iniciar Streaming de Cámara y Detección Automática por IA
+  // Manejo de Cámara y Visión IA para Android
   const startCameraStream = async () => {
     try {
       const constraints = {
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        videoRef.current.play();
       }
       setIsStreaming(true);
       setStreamStatus('Analizando fotogramas...');
       runContinuousVisionLoop();
     } catch (err) {
-      setStreamStatus('Error de cámara (Permisos denegados)');
+      setStreamStatus('Cámara no disponible');
     }
   };
 
@@ -251,7 +254,6 @@ export default function App() {
     setStreamStatus('Inactivo');
   };
 
-  // Bucle de Streaming Continuo
   const runContinuousVisionLoop = () => {
     if (streamTimerRef.current) clearInterval(streamTimerRef.current);
 
@@ -264,16 +266,16 @@ export default function App() {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const base64Data = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+      const base64Data = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
       if (!base64Data) return;
 
       const apiKey = "";
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
-      const prompt = `Analiza esta mesa de póker en tiempo real. Devuelve estrictamente un JSON con:
-- holeCards: array de 2 strings (ej: ["Ah", "Kd"]) o null si no se ven
+      const prompt = `Analiza esta mesa de póker. Devuelve estrictamente un JSON con:
+- holeCards: array de 2 strings (ej: ["Ah", "Kd"]) o null
 - boardCards: array de hasta 5 cartas comunitarias (ej: ["10s", "Jd", "2c"])
-- pot: número estimado del bote
+- pot: número del bote
 - callAmount: número de la apuesta a igualar`;
 
       try {
@@ -294,26 +296,40 @@ export default function App() {
           if (h0 && h1) setHoleCards([h0, h1]);
         }
         if (parsed.boardCards && Array.isArray(parsed.boardCards)) {
-          const b = [null, null, null, null, null];
-          parsed.boardCards.forEach((c, i) => { if (i < 5) b[i] = parseCardString(c); });
+          const b = [...boardCards];
+          parsed.boardCards.forEach((c, i) => { if (i < 5) { const parsedC = parseCardString(c); if (parsedC) b[i] = parsedC; } });
           setBoardCards(b);
         }
         if (parsed.pot) setPot(Number(parsed.pot));
         if (parsed.callAmount !== undefined) setCallAmount(Number(parsed.callAmount));
-        setStreamStatus('En vivo (IA Sincronizada)');
+        setStreamStatus('IA Sincronizada');
       } catch {
-        setStreamStatus('Reintentando análisis...');
+        setStreamStatus('Reintentando...');
       }
-    }, 2500);
+    }, 3000);
   };
 
   useEffect(() => {
-    return () => {
-      if (streamTimerRef.current) clearInterval(streamTimerRef.current);
-    };
+    return () => { if (streamTimerRef.current) clearInterval(streamTimerRef.current); };
   }, []);
 
-  const actionColors = {
+  const handleSelectCard = (rankObj, suitObj) => {
+    if (!editingCardSlot) return;
+    const newCard = { rank: rankObj.value, suit: suitObj.id, label: rankObj.label };
+    if (editingCardSlot.type === 'hole') {
+      const updated = [...holeCards];
+      updated[editingCardSlot.index] = newCard;
+      setHoleCards(updated);
+    } else {
+      const updated = [...boardCards];
+      updated[editingCardSlot.index] = newCard;
+      setBoardCards(updated);
+    }
+    setEditingCardSlot(null);
+    setActiveTab('table');
+  };
+
+  const actionColorClass = {
     emerald: 'bg-emerald-500 text-slate-950 border-emerald-400',
     blue: 'bg-blue-600 text-white border-blue-500',
     amber: 'bg-amber-500 text-slate-950 border-amber-400',
@@ -322,15 +338,15 @@ export default function App() {
   }[decision.color];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-4 max-w-md mx-auto flex flex-col gap-3 font-sans touch-manipulation">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 max-w-md mx-auto flex flex-col gap-3 font-sans select-none touch-manipulation">
       
       {/* CABECERA */}
-      <header className="flex items-center justify-between bg-slate-900 border border-slate-800 p-3 rounded-2xl">
+      <header className="flex items-center justify-between bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-lg">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center font-black text-slate-950">♠</div>
+          <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-base shadow">♠</div>
           <div>
-            <h1 className="font-extrabold text-sm text-white">PokerVision <span className="text-emerald-400">Pro</span></h1>
-            <p className="text-[10px] text-slate-400">Visión Continua • 98% GTO</p>
+            <h1 className="font-extrabold text-xs text-white">PokerVision <span className="text-emerald-400">Android</span></h1>
+            <p className="text-[10px] text-slate-400">98% GTO + Visión IA</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
@@ -339,116 +355,252 @@ export default function App() {
         </div>
       </header>
 
-      {/* 1. VISOR DE CÁMARA EN VIVO / STREAMING */}
-      <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <video ref={videoRef} playsInline muted autoPlay className={`w-full h-40 object-cover ${isStreaming ? 'block' : 'hidden'}`} />
-        <canvas ref={canvasRef} className="hidden" />
-
-        {!isStreaming && (
-          <div className="h-40 flex flex-col items-center justify-center p-4 text-center bg-slate-950/50">
-            <Camera className="w-8 h-8 text-emerald-400 mb-2 animate-bounce" />
-            <p className="text-xs font-medium text-slate-300">Activa la visión continua para que la IA lea tu mesa fotograma a fotograma</p>
-          </div>
-        )}
-
-        <div className="absolute bottom-2 right-2 left-2 flex gap-2">
-          {!isStreaming ? (
-            <button
-              onClick={startCameraStream}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95"
-            >
-              <Play className="w-4 h-4 fill-current" /> Iniciar Visión Continua
-            </button>
-          ) : (
-            <button
-              onClick={stopCameraStream}
-              className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95"
-            >
-              <Square className="w-4 h-4 fill-current" /> Pausar Cámara
-            </button>
-          )}
-        </div>
+      {/* NAVEGACIÓN TÁCTIL MÓVIL */}
+      <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+        <button 
+          onClick={() => setActiveTab('table')}
+          className={`py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'table' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}`}
+        >
+          Mesa HUD
+        </button>
+        <button 
+          onClick={() => setActiveTab('selector')}
+          className={`py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'selector' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}`}
+        >
+          Selector Cartas
+        </button>
+        <button 
+          onClick={() => setActiveTab('villain')}
+          className={`py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'villain' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}`}
+        >
+          Rivales ({villainMetrics.vpip}%)
+        </button>
       </div>
 
-      {/* 2. HUD DE DECISIÓN GTO ÓPTIMA */}
-      <div className={`border-2 rounded-2xl p-4 shadow-xl transition-all ${actionColors}`}>
-        <div className="flex justify-between items-center text-[11px] font-bold opacity-90 uppercase tracking-widest mb-1">
-          <span>Decisión GTO (En Vivo)</span>
-          <span>Equity: {equity}%</span>
-        </div>
-        <div className="text-2xl sm:text-3xl font-black tracking-tight">{decision.action}</div>
-        <div className="text-sm font-semibold opacity-90 mt-1">{decision.sizing}</div>
-        
-        <div className="mt-3 pt-3 border-t border-black/10 flex justify-between text-xs font-medium opacity-90">
-          <span>Pot Odds: {decision.potOdds || 0}%</span>
-          <span>MDF: {decision.mdf || 100}%</span>
-          <button onClick={() => setRng(Math.floor(Math.random() * 100) + 1)} className="underline cursor-pointer">
-            RNG: {rng !== null ? rng : 'Girar'}
-          </button>
-        </div>
-      </div>
+      {/* CONTENIDO PRINCIPAL SEGÚN PESTAÑA */}
+      {activeTab === 'table' && (
+        <div className="flex flex-col gap-3">
+          
+          {/* CÁMARA / VISIÓN */}
+          <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <video ref={videoRef} playsInline muted className={`w-full h-36 object-cover ${isStreaming ? 'block' : 'hidden'}`} />
+            <canvas ref={canvasRef} className="hidden" />
 
-      {/* 3. CARTAS DETECTADAS EN TIEMPO REAL */}
-      <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl space-y-3">
-        <div className="flex justify-between items-center text-xs">
-          <span className="font-semibold text-slate-300">Cartas Detectadas por IA</span>
-          <span className="text-emerald-400 text-[10px]">Actualización automática</span>
-        </div>
-
-        {/* Tus Cartas */}
-        <div className="flex justify-center gap-2">
-          {[0, 1].map(i => {
-            const c = holeCards[i];
-            const s = c ? SUITS.find(x => x.id === c.suit) : null;
-            return (
-              <div
-                key={`h-${i}`}
-                className={`w-14 h-20 rounded-xl border-2 flex flex-col items-center justify-between p-2 bg-slate-950 ${c ? s.color : 'border-slate-800 text-slate-700'}`}
-              >
-                {c ? <><span className="text-xs font-bold">{c.label}</span><span className="text-xl">{s.symbol}</span><span className="text-[10px] self-end">{c.label}</span></> : <span className="text-lg text-slate-700">?</span>}
+            {!isStreaming && (
+              <div className="h-36 flex flex-col items-center justify-center p-4 text-center bg-slate-950/60">
+                <Camera className="w-8 h-8 text-emerald-400 mb-2 animate-bounce" />
+                <p className="text-xs text-slate-300 font-medium">Activa la cámara para lectura automática en tiempo real</p>
               </div>
-            );
-          })}
-        </div>
+            )}
 
-        {/* Board Comunitarias */}
-        <div className="flex justify-center gap-1.5">
-          {[0, 1, 2, 3, 4].map(i => {
-            const c = boardCards[i];
-            const s = c ? SUITS.find(x => x.id === c.suit) : null;
-            return (
-              <div
-                key={`b-${i}`}
-                className={`w-11 h-16 rounded-lg border flex flex-col items-center justify-between p-1 bg-slate-950 ${c ? s.color : 'border-slate-800 text-slate-700'}`}
-              >
-                {c ? <><span className="text-[10px] font-bold">{c.label}</span><span className="text-sm">{s.symbol}</span></> : <span className="text-xs text-slate-700">-</span>}
+            <div className="absolute bottom-2 right-2 left-2 flex gap-2">
+              {!isStreaming ? (
+                <button
+                  onClick={startCameraStream}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                >
+                  <Play className="w-4 h-4 fill-current" /> Iniciar Visión IA
+                </button>
+              ) : (
+                <button
+                  onClick={stopCameraStream}
+                  className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                >
+                  <Square className="w-4 h-4 fill-current" /> Pausar Cámara
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* HUD DE DECISIÓN GTO */}
+          <div className={`border-2 rounded-2xl p-4 shadow-2xl transition-all ${actionColorClass}`}>
+            <div className="flex justify-between items-center text-[11px] font-extrabold opacity-90 uppercase tracking-widest mb-1">
+              <span>Estrategia 98% GTO</span>
+              <span>Equity: {equity}%</span>
+            </div>
+            <div className="text-2xl font-black tracking-tight">{decision.action}</div>
+            <div className="text-xs font-bold opacity-90 mt-1">{decision.sizing}</div>
+            
+            <div className="mt-3 pt-3 border-t border-black/10 flex justify-between text-xs font-medium opacity-90">
+              <span>Pot Odds: {decision.potOdds}%</span>
+              <span>MDF: {decision.mdf}%</span>
+              <button onClick={() => setRng(Math.floor(Math.random() * 100) + 1)} className="underline font-bold">
+                RNG: {rng !== null ? rng : 'Lanzar'}
+              </button>
+            </div>
+          </div>
+
+          {/* BANCO DE CARTAS (TOCA PARA EDITAR) */}
+          <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl space-y-3">
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-semibold text-slate-300">Tus Manos (Hole Cards)</span>
+              <span className="text-[10px] text-emerald-400">Toca para cambiar</span>
+            </div>
+            <div className="flex justify-center gap-3">
+              {[0, 1].map(i => {
+                const c = holeCards[i];
+                const s = c ? SUITS.find(x => x.id === c.suit) : null;
+                return (
+                  <button
+                    key={`h-${i}`}
+                    onClick={() => { setEditingCardSlot({ type: 'hole', index: i }); setActiveTab('selector'); }}
+                    className={`w-16 h-22 rounded-xl border-2 flex flex-col items-center justify-between p-2 shadow transition-all active:scale-95 bg-slate-950 ${c ? s.color : 'border-dashed border-slate-700 text-slate-600'}`}
+                  >
+                    {c ? <><span className="text-xs font-black">{c.label}</span><span className="text-2xl">{s.symbol}</span><span className="text-[10px] self-end">{c.label}</span></> : <span className="text-xl my-auto">+</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 border-t border-slate-800">
+              <span className="text-[11px] font-semibold text-slate-300 block mb-2">Cartas Comunitarias (Board)</span>
+              <div className="flex justify-center gap-1.5">
+                {[0, 1, 2, 3, 4].map(i => {
+                  const c = boardCards[i];
+                  const s = c ? SUITS.find(x => x.id === c.suit) : null;
+                  return (
+                    <button
+                      key={`b-${i}`}
+                      onClick={() => { setEditingCardSlot({ type: 'board', index: i }); setActiveTab('selector'); }}
+                      className={`w-12 h-18 rounded-lg border flex flex-col items-center justify-between p-1 transition-all active:scale-95 bg-slate-950 ${c ? s.color : 'border-dashed border-slate-800 text-slate-600'}`}
+                    >
+                      {c ? <><span className="text-[10px] font-bold">{c.label}</span><span className="text-sm">{s.symbol}</span></> : <span className="text-sm my-auto">+</span>}
+                    </button>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-      </div>
+            </div>
+          </div>
 
-      {/* 4. MÉTRICAS BOTE & RIVAL */}
-      <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl grid grid-cols-3 gap-2 text-center">
-        <div>
-          <span className="text-[10px] text-slate-400">Bote Óptico</span>
-          <div className="mt-1 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs font-bold text-white">
-            {pot} fichas
+          {/* BOTE Y APUESTA RÁPIDA */}
+          <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl grid grid-cols-2 gap-3">
+            <div>
+              <span className="text-[10px] text-slate-400">Tamaño del Bote</span>
+              <div className="flex items-center gap-1 mt-1">
+                <button onClick={() => setPot(Math.max(10, pot - 20))} className="bg-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold">-</button>
+                <input 
+                  type="number" 
+                  value={pot} 
+                  onChange={e => setPot(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 text-center rounded-xl p-1.5 text-xs font-bold text-white" 
+                />
+                <button onClick={() => setPot(pot + 20)} className="bg-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold">+</button>
+              </div>
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-400">Apuesta a Igualar</span>
+              <div className="flex items-center gap-1 mt-1">
+                <button onClick={() => setCallAmount(Math.max(0, callAmount - 10))} className="bg-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold">-</button>
+                <input 
+                  type="number" 
+                  value={callAmount} 
+                  onChange={e => setCallAmount(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 text-center rounded-xl p-1.5 text-xs font-bold text-emerald-400" 
+                />
+                <button onClick={() => setCallAmount(callAmount + 10)} className="bg-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold">+</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* SELECTOR DE CARTAS TÁCTIL */}
+      {activeTab === 'selector' && (
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-emerald-400">
+              {editingCardSlot ? `Seleccionando ${editingCardSlot.type === 'hole' ? 'tu carta #' + (editingCardSlot.index + 1) : 'comunitaria #' + (editingCardSlot.index + 1)}` : 'Selecciona una carta'}
+            </span>
+            <button onClick={() => setActiveTab('table')} className="text-xs text-slate-400 underline">Volver</button>
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-[10px] text-slate-400 block uppercase">1. Elige Valor</span>
+            <div className="grid grid-cols-7 gap-1.5">
+              {RANKS.map(r => (
+                <button
+                  key={r.label}
+                  onClick={() => handleSelectCard(r, SUITS[0])}
+                  className="bg-slate-950 border border-slate-800 py-3 rounded-xl font-black text-sm text-white active:bg-emerald-500 active:text-slate-950"
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-[10px] text-slate-400 block uppercase">2. Elige Palo</span>
+            <div className="grid grid-cols-4 gap-2">
+              {SUITS.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    if (editingCardSlot) {
+                      const currentRank = holeCards[editingCardSlot.index]?.label || 'A';
+                      const rObj = RANKS.find(r => r.label === currentRank) || RANKS[0];
+                      handleSelectCard(rObj, s);
+                    }
+                  }}
+                  className={`py-3 rounded-xl font-bold text-lg flex items-center justify-center border shadow ${s.color}`}
+                >
+                  {s.symbol}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <div>
-          <span className="text-[10px] text-slate-400">A Igualar</span>
-          <div className="mt-1 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs font-bold text-emerald-400">
-            {callAmount} fichas
+      )}
+
+      {/* PESTAÑA RIVALES / BASE DE DATOS */}
+      {activeTab === 'villain' && (
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-white">Perfil del Oponente HUD</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded border ${villainMetrics.archetype.class}`}>{villainMetrics.archetype.label}</span>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div className="flex justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <span className="text-slate-400">VPIP (Manos Jugadas)</span>
+              <span className="font-bold text-emerald-400">{villainMetrics.vpip}%</span>
+            </div>
+            <div className="flex justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <span className="text-slate-400">PFR (Subidas Preflop)</span>
+              <span className="font-bold text-cyan-400">{villainMetrics.pfr}%</span>
+            </div>
+            <div className="flex justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <span className="text-slate-400">Factor de Agresión (AF)</span>
+              <span className="font-bold text-amber-400">{villainMetrics.af}</span>
+            </div>
+          </div>
+
+          <div className="pt-2 space-y-2">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wide">Registrar Acción del Rival</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button 
+                onClick={() => setVillain(v => ({ ...v, hands: v.hands + 1, vpipCount: v.vpipCount + 1, aggroActions: v.aggroActions + 1 }))}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow active:scale-95"
+              >
+                + Subió (Agresivo)
+              </button>
+              <button 
+                onClick={() => setVillain(v => ({ ...v, hands: v.hands + 1, vpipCount: v.vpipCount + 1, passiveActions: v.passiveActions + 1 }))}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow active:scale-95"
+              >
+                + Pagó (Pasivo)
+              </button>
+              <button 
+                onClick={() => setVillain(v => ({ ...v, hands: v.hands + 1, foldToBetCount: v.foldToBetCount + 1, facedBetCount: v.facedBetCount + 1 }))}
+                className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 px-3 rounded-xl text-xs shadow active:scale-95 col-span-2"
+              >
+                + Se Retiró ante Apuesta (Fold)
+              </button>
+            </div>
           </div>
         </div>
-        <div>
-          <span className="text-[10px] text-slate-400">Rival (VPIP)</span>
-          <div className="mt-1 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs font-bold text-cyan-400 flex items-center justify-center gap-1">
-            <User className="w-3 h-3" /> {villainMetrics.vpip}%
-          </div>
-        </div>
-      </div>
+      )}
 
     </div>
   );
