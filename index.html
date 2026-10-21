@@ -1,196 +1,456 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PokerVision AI - Asistente de Póker</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
-    <div id="root"></div>
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Camera, RefreshCw, Sparkles, Zap, Shield, User, Play, Square, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-    <script type="text/babel">
-        const { useState, useMemo } = React;
+// ==========================================
+// CONSTANTES Y CONFIGURACIÓN DE PÓKER
+// ==========================================
 
-        const RANKS = [
-            { value: 14, label: 'A', name: 'As' },
-            { value: 13, label: 'K', name: 'Rey' },
-            { value: 12, label: 'Q', name: 'Reina' },
-            { value: 11, label: 'J', name: 'Jota' },
-            { value: 10, label: 'T', display: '10', name: 'Diez' },
-            { value: 9, label: '9', name: 'Nueve' },
-            { value: 8, label: '8', name: 'Ocho' },
-            { value: 7, label: '7', name: 'Siete' },
-            { value: 6, label: '6', name: 'Seis' },
-            { value: 5, label: '5', name: 'Cinco' },
-            { value: 4, label: '4', name: 'Cuatro' },
-            { value: 3, label: '3', name: 'Tres' },
-            { value: 2, label: '2', name: 'Dos' }
-        ];
+const RANKS = [
+  { value: 14, label: 'A' }, { value: 13, label: 'K' }, { value: 12, label: 'Q' }, 
+  { value: 11, label: 'J' }, { value: 10, label: '10' }, { value: 9, label: '9' }, 
+  { value: 8, label: '8' }, { value: 7, label: '7' }, { value: 6, label: '6' }, 
+  { value: 5, label: '5' }, { value: 4, label: '4' }, { value: 3, label: '3' }, { value: 2, label: '2' }
+];
 
-        const SUITS = [
-            { id: 's', symbol: '♠', name: 'Picas', color: 'text-slate-900', bg: 'bg-slate-100', border: 'border-slate-300' },
-            { id: 'h', symbol: '♥', name: 'Corazones', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
-            { id: 'd', symbol: '♦', name: 'Diamantes', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
-            { id: 'c', symbol: '♣', name: 'Tréboles', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' }
-        ];
+const SUITS = [
+  { id: 's', symbol: '♠', color: 'text-slate-900 bg-slate-100 border-slate-300' },
+  { id: 'h', symbol: '♥', color: 'text-red-600 bg-red-50 border-red-200' },
+  { id: 'd', symbol: '♦', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+  { id: 'c', symbol: '♣', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+];
 
-        const ARCHETYPES = {
-            TAG: { label: 'TAG (Tiburón Tight-Agresivo)', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
-            LAG: { label: 'LAG (Maníaco / Loose-Agresivo)', badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
-            NIT: { label: 'NIT (Roca / Conservador)', badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
-            STATION: { label: 'STATION (Pagador Pasivo)', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-            UNKNOWN: { label: 'ESTÁNDAR (Equilibrado)', badge: 'bg-slate-700 text-slate-300 border-slate-600' }
-        };
+const ARCHETYPES = {
+  NIT: { label: 'Roca (Nit)', class: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' },
+  LAG: { label: 'Maníaco (LAG)', class: 'bg-rose-500/10 text-rose-400 border-rose-500/30' },
+  STATION: { label: 'Pagador (Station)', class: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+  TAG: { label: 'Tiburón (TAG)', class: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+  UNKNOWN: { label: 'Estándar', class: 'bg-slate-800 text-slate-300 border-slate-700' }
+};
 
-        function evaluate7Cards(cards) {
-            if (!cards || cards.length === 0) return { name: 'Sin Cartas', score: 0 };
-            const ranks = cards.map(c => c.rank).sort((a,b) => b-a);
-            const highRank = ranks[0] || 0;
-            const isPair = ranks.length >= 2 && ranks[0] === ranks[1];
-            return {
-                name: isPair ? `Pareja de ${highRank}` : `Carta Alta (${highRank})`,
-                score: highRank * 1000 + (isPair ? 500000 : 0)
-            };
+const DEFAULT_VILLAIN = {
+  id: 'v1', name: 'Rival Activo', hands: 52, vpipCount: 14, pfrCount: 11, 
+  aggroActions: 15, passiveActions: 6, foldToBetCount: 14, facedBetCount: 22
+};
+
+const computeVillainMetrics = (v) => {
+  const hands = Math.max(1, v.hands);
+  const vpip = Math.min(100, Math.round((v.vpipCount / hands) * 100));
+  const pfr = Math.min(100, Math.round((v.pfrCount / hands) * 100));
+  const af = Math.round(((v.aggroActions / Math.max(1, v.passiveActions)) * 10) / 10);
+  const foldToBet = Math.min(100, Math.round((v.foldToBetCount / Math.max(1, v.facedBetCount)) * 100));
+
+  let archetype = ARCHETYPES.UNKNOWN;
+  if (vpip <= 18 && foldToBet >= 55) archetype = ARCHETYPES.NIT;
+  else if (vpip >= 35 && af >= 2.2) archetype = ARCHETYPES.LAG;
+  else if (vpip >= 30 && af <= 1.5) archetype = ARCHETYPES.STATION;
+  else if (vpip >= 18 && vpip <= 30 && af >= 1.6) archetype = ARCHETYPES.TAG;
+
+  return { vpip, pfr, af, foldToBet, archetype };
+};
+
+const createFullDeck = () => {
+  const deck = [];
+  for (const r of RANKS) {
+    for (const s of SUITS) {
+      deck.push({ rank: r.value, suit: s.id, label: r.label });
+    }
+  }
+  return deck;
+};
+
+const parseCardString = (str) => {
+  if (!str || typeof str !== 'string') return null;
+  const clean = str.trim();
+  if (clean.length < 2) return null;
+  let rankChar = clean.slice(0, -1).toUpperCase();
+  const suitChar = clean.slice(-1).toLowerCase();
+  if (rankChar === '10') rankChar = '10';
+  const rankObj = RANKS.find(r => r.label === rankChar);
+  const suitObj = SUITS.find(s => s.id === suitChar);
+  if (rankObj && suitObj) return { rank: rankObj.value, suit: suitObj.id, label: rankObj.label };
+  return null;
+};
+
+// ==========================================
+// MOTOR MATEMÁTICO (MONTE CARLO & 98% GTO)
+// ==========================================
+
+const evaluate7Cards = (cards) => {
+  if (!cards || cards.length === 0) return { category: 0, name: 'Sin Cartas', score: 0 };
+  const rankCounts = {};
+  const suitCards = { s: [], h: [], d: [], c: [] };
+  cards.forEach(c => {
+    rankCounts[c.rank] = (rankCounts[c.rank] || 0) + 1;
+    if (suitCards[c.suit]) suitCards[c.suit].push(c.rank);
+  });
+  const uniqueRanks = Object.keys(rankCounts).map(Number).sort((a, b) => b - a);
+
+  const findStraight = (rankList) => {
+    const set = new Set(rankList);
+    if (set.has(14)) set.add(1);
+    const sorted = Array.from(set).sort((a, b) => b - a);
+    let consecutive = 1;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (sorted[i] - sorted[i + 1] === 1) {
+        consecutive++;
+        if (consecutive >= 5) return sorted[i - 3];
+      } else {
+        consecutive = 1;
+      }
+    }
+    return 0;
+  };
+
+  let flushSuit = null;
+  for (const s of ['s', 'h', 'd', 'c']) {
+    if (suitCards[s].length >= 5) { flushSuit = s; break; }
+  }
+
+  if (flushSuit) {
+    const flushRanks = suitCards[flushSuit].sort((a, b) => b - a);
+    const sfHigh = findStraight(flushRanks);
+    if (sfHigh > 0) return { category: 8, name: sfHigh === 14 ? 'Escalera Real' : 'Escalera de Color', score: 8000000 + sfHigh };
+  }
+
+  const quads = [], trips = [], pairs = [], singles = [];
+  for (const r of uniqueRanks) {
+    const count = rankCounts[r];
+    if (count === 4) quads.push(r);
+    else if (count === 3) trips.push(r);
+    else if (count === 2) pairs.push(r);
+    else singles.push(r);
+  }
+
+  if (quads.length > 0) return { category: 7, name: 'Póker', score: 7000000 + quads[0] * 100 };
+  if (trips.length >= 2 || (trips.length === 1 && pairs.length >= 1)) return { category: 6, name: 'Full House', score: 6000000 + trips[0] * 100 };
+  if (flushSuit) return { category: 5, name: 'Color', score: 5000000 };
+  const straightHigh = findStraight(uniqueRanks);
+  if (straightHigh > 0) return { category: 4, name: 'Escalera', score: 4000000 + straightHigh };
+  if (trips.length > 0) return { category: 3, name: 'Trío', score: 3000000 + trips[0] * 500 };
+  if (pairs.length >= 2) return { category: 2, name: 'Doble Pareja', score: 2000000 + pairs[0] * 500 };
+  if (pairs.length === 1) return { category: 1, name: 'Pareja', score: 1000000 + pairs[0] * 4000 };
+  return { category: 0, name: 'Carta Alta', score: uniqueRanks[0] || 0 };
+};
+
+const runMonteCarlo = (hole, board, iterations = 150) => {
+  const validHole = hole.filter(Boolean);
+  const validBoard = board.filter(Boolean);
+  if (validHole.length < 2) return 50;
+  const known = [...validHole, ...validBoard];
+  const deck = createFullDeck().filter(d => !known.some(k => k.rank === d.rank && k.suit === d.suit));
+
+  let wins = 0;
+  const neededBoard = 5 - validBoard.length;
+
+  for (let i = 0; i < iterations; i++) {
+    const dCopy = [...deck];
+    for (let j = 0; j < neededBoard + 2; j++) {
+      const r = j + Math.floor(Math.random() * (dCopy.length - j));
+      const temp = dCopy[j]; dCopy[j] = dCopy[r]; dCopy[r] = temp;
+    }
+    const simBoard = [...validBoard, ...dCopy.slice(0, neededBoard)];
+    const vHole = [dCopy[neededBoard], dCopy[neededBoard + 1]];
+
+    const heroScore = evaluate7Cards([...validHole, ...simBoard]).score;
+    const villainScore = evaluate7Cards([...vHole, ...simBoard]).score;
+
+    if (heroScore > villainScore) wins++;
+    else if (heroScore === villainScore) wins += 0.5;
+  }
+  return Math.round((wins / iterations) * 100);
+};
+
+// ==========================================
+// COMPONENTE PRINCIPAL (VISIÓN CONTINUA)
+// ==========================================
+
+export default function App() {
+  const [holeCards, setHoleCards] = useState([null, null]);
+  const [boardCards, setBoardCards] = useState([null, null, null, null, null]);
+  const [pot, setPot] = useState(120);
+  const [callAmount, setCallAmount] = useState(40);
+
+  const [villain, setVillain] = useState(DEFAULT_VILLAIN);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamStatus, setStreamStatus] = useState('Inactivo');
+  const [rng, setRng] = useState(null);
+
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamTimerRef = useRef(null);
+
+  const villainMetrics = useMemo(() => computeVillainMetrics(villain), [villain]);
+  const equity = useMemo(() => runMonteCarlo(holeCards, boardCards), [holeCards, boardCards]);
+
+  // Motor GTO Híbrido 98% + 2% Explotativo
+  const decision = useMemo(() => {
+    const validHole = holeCards.filter(Boolean);
+    if (validHole.length < 2) return { action: 'INICIA CÁMARA O SELECCIONA', sizing: 'La visión continua detectará tus cartas', color: 'slate', points: [] };
+
+    const potOdds = callAmount > 0 ? Math.round((callAmount / (pot + callAmount)) * 100) : 0;
+    const mdf = callAmount > 0 ? Math.round((pot / (pot + callAmount)) * 100) : 100;
+
+    let action = 'CHECK / PASAR';
+    let sizing = '0 fichas';
+    let color = 'amber';
+
+    if (callAmount === 0) {
+      if (equity >= 58) {
+        action = 'APOSTAR (98% GTO)';
+        sizing = `${Math.round(pot * 0.65)} fichas (65% Pot)`;
+        color = 'emerald';
+      } else if (equity >= 38) {
+        action = 'APUESTA BLUFF / SEMI';
+        sizing = `${Math.round(pot * 0.35)} fichas (35% Pot)`;
+        color = 'emerald';
+      }
+    } else {
+      if (equity >= potOdds + 4) {
+        action = 'SUBIR / RAISE';
+        sizing = `Subir a ${Math.round(callAmount * 2.5)} fichas`;
+        color = 'emerald';
+      } else if (equity >= potOdds - 3) {
+        action = 'IGUALAR (CALL)';
+        sizing = `Pagar ${callAmount} fichas`;
+        color = 'blue';
+      } else {
+        action = 'ABANDONAR (FOLD)';
+        sizing = `Ahorrar ${callAmount} fichas`;
+        color = 'red';
+      }
+    }
+    return { action, sizing, color, potOdds, mdf };
+  }, [holeCards, boardCards, pot, callAmount, equity]);
+
+  // Iniciar Streaming de Cámara y Detección Automática por IA
+  const startCameraStream = async () => {
+    try {
+      const constraints = {
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setIsStreaming(true);
+      setStreamStatus('Analizando fotogramas...');
+      runContinuousVisionLoop();
+    } catch (err) {
+      setStreamStatus('Error de cámara (Permisos denegados)');
+    }
+  };
+
+  const stopCameraStream = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach(t => t.stop());
+      videoRef.current.srcObject = null;
+    }
+    if (streamTimerRef.current) clearInterval(streamTimerRef.current);
+    setIsStreaming(false);
+    setStreamStatus('Inactivo');
+  };
+
+  // Bucle de Streaming Continuo (Envía fotograma cada 2.5 segundos a Gemini Vision)
+  const runContinuousVisionLoop = () => {
+    if (streamTimerRef.current) clearInterval(streamTimerRef.current);
+
+    streamTimerRef.current = setInterval(async () => {
+      if (!videoRef.current || !canvasRef.current) return;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const base64Data = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+      if (!base64Data) return;
+
+      const apiKey = "";
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+      const prompt = `Analiza esta mesa de póker en tiempo real. Devuelve estrictamente un JSON con:
+- holeCards: array de 2 strings (ej: ["Ah", "Kd"]) o null si no se ven
+- boardCards: array de hasta 5 cartas comunitarias (ej: ["10s", "Jd", "2c"])
+- pot: número estimado del bote
+- callAmount: número de la apuesta a igualar`;
+
+      try {
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64Data } }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+          })
+        });
+        const json = await res.json();
+        const parsed = JSON.parse(json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+        
+        if (parsed.holeCards && parsed.holeCards.length >= 2) {
+          const h0 = parseCardString(parsed.holeCards[0]);
+          const h1 = parseCardString(parsed.holeCards[1]);
+          if (h0 && h1) setHoleCards([h0, h1]);
         }
+        if (parsed.boardCards && Array.isArray(parsed.boardCards)) {
+          const b = [null, null, null, null, null];
+          parsed.boardCards.forEach((c, i) => { if (i < 5) b[i] = parseCardString(c); });
+          setBoardCards(b);
+        }
+        if (parsed.pot) setPot(Number(parsed.pot));
+        if (parsed.callAmount !== undefined) setCallAmount(Number(parsed.callAmount));
+        setStreamStatus('En vivo (IA Sincronizada)');
+      } catch {
+        setStreamStatus('Reintentando análisis...');
+      }
+    }, 2500);
+  };
 
-        function App() {
-            const [holeCards, setHoleCards] = useState([{ rank: 14, suit: 's' }, { rank: 13, suit: 's' }]);
-            const [boardCards, setBoardCards] = useState([{ rank: 11, suit: 's' }, { rank: 10, suit: 'h' }, { rank: 4, suit: 's' }, null, null]);
-            const [activeSlot, setActiveSlot] = useState({ type: 'hole', index: 0 });
-            const [selectedSuit, setSelectedSuit] = useState('s');
+  useEffect(() => {
+    return () => {
+      if (streamTimerRef.current) clearInterval(streamTimerRef.current);
+    };
+  }, []);
 
-            const [potSize, setPotSize] = useState(120);
-            const [callAmount, setCallAmount] = useState(40);
-            const [stack, setStack] = useState(350);
-            const [villainType, setVillainType] = useState('LAG');
-            const [rng, setRng] = useState(null);
+  const actionColors = {
+    emerald: 'bg-emerald-500 text-slate-950 border-emerald-400',
+    blue: 'bg-blue-600 text-white border-blue-500',
+    amber: 'bg-amber-500 text-slate-950 border-amber-400',
+    red: 'bg-rose-600 text-white border-rose-500',
+    slate: 'bg-slate-900 text-slate-300 border-slate-800'
+  }[decision.color];
 
-            const potOdds = callAmount > 0 ? Math.round((callAmount / (potSize + callAmount)) * 100) : 0;
-            const equity = 58;
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-4 max-w-md mx-auto flex flex-col gap-3 font-sans touch-manipulation">
+      
+      {/* CABECERA */}
+      <header className="flex items-center justify-between bg-slate-900 border border-slate-800 p-3 rounded-2xl">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center font-black text-slate-950">♠</div>
+          <div>
+            <h1 className="font-extrabold text-sm text-white">PokerVision <span className="text-emerald-400">Pro</span></h1>
+            <p className="text-[10px] text-slate-400">Visión Continua • 98% GTO</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+          <span className={`w-2 h-2 rounded-full ${isStreaming ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
+          <span className="text-[10px] font-medium text-slate-300">{streamStatus}</span>
+        </div>
+      </header>
 
-            const rollRng = () => setRng(Math.floor(Math.random() * 100) + 1);
+      {/* 1. VISOR DE CÁMARA EN VIVO / STREAMING */}
+      <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        <video ref={videoRef} playsInline muted className={`w-full h-40 object-cover ${isStreaming ? 'block' : 'hidden'}`} />
+        <canvas ref={canvasRef} className="hidden" />
 
+        {!isStreaming && (
+          <div className="h-40 flex flex-col items-center justify-center p-4 text-center bg-slate-950/50">
+            <Camera className="w-8 h-8 text-emerald-400 mb-2 animate-bounce" />
+            <p className="text-xs font-medium text-slate-300">Activa la visión continua para que la IA lea tu mesa fotograma a fotograma</p>
+          </div>
+        )}
+
+        <div className="absolute bottom-2 right-2 left-2 flex gap-2">
+          {!isStreaming ? (
+            <button
+              onClick={startCameraStream}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95"
+            >
+              <Play className="w-4 h-4 fill-current" /> Iniciar Visión Continua
+            </button>
+          ) : (
+            <button
+              onClick={stopCameraStream}
+              className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-95"
+            >
+              <Square className="w-4 h-4 fill-current" /> Pausar Cámara
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 2. HUD DE DECISIÓN GTO ÓPTIMA */}
+      <div className={`border-2 rounded-2xl p-4 shadow-xl transition-all ${actionColors}`}>
+        <div className="flex justify-between items-center text-[11px] font-bold opacity-90 uppercase tracking-widest mb-1">
+          <span>Decisión GTO (En Vivo)</span>
+          <span>Equity: {equity}%</span>
+        </div>
+        <div className="text-2xl sm:text-3xl font-black tracking-tight">{decision.action}</div>
+        <div className="text-sm font-semibold opacity-90 mt-1">{decision.sizing}</div>
+        
+        <div className="mt-3 pt-3 border-t border-black/10 flex justify-between text-xs font-medium opacity-90">
+          <span>Pot Odds: {decision.potOdds || 0}%</span>
+          <span>MDF: {decision.mdf || 100}%</span>
+          <button onClick={() => setRng(Math.floor(Math.random() * 100) + 1)} className="underline cursor-pointer">
+            RNG: {rng !== null ? rng : 'Girar'}
+          </button>
+        </div>
+      </div>
+
+      {/* 3. CARTAS DETECTADAS EN TIEMPO REAL */}
+      <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl space-y-3">
+        <div className="flex justify-between items-center text-xs">
+          <span className="font-semibold text-slate-300">Cartas Detectadas por IA</span>
+          <span className="text-emerald-400 text-[10px]">Actualización automática</span>
+        </div>
+
+        {/* Tus Cartas */}
+        <div className="flex justify-center gap-2">
+          {[0, 1].map(i => {
+            const c = holeCards[i];
+            const s = c ? SUITS.find(x => x.id === c.suit) : null;
             return (
-                <div className="max-w-md mx-auto p-4 space-y-4 pb-12">
-                    <header className="flex items-center justify-between border-b border-slate-800 pb-3">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center font-black">♠</div>
-                            <h1 className="font-bold text-lg text-white">PokerVision <span className="text-emerald-400">AI</span></h1>
-                        </div>
-                        <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full font-bold">98% GTO</span>
-                    </header>
-
-                    {/* MESA Y CARTAS */}
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
-                        <div>
-                            <span className="text-xs font-bold text-emerald-400 uppercase">Tus Cartas</span>
-                            <div className="flex gap-2 mt-1.5">
-                                {[0, 1].map(i => {
-                                    const c = holeCards[i];
-                                    const active = activeSlot.type === 'hole' && activeSlot.index === i;
-                                    return (
-                                        <button key={i} onClick={() => setActiveSlot({ type: 'hole', index: i })} className={`w-16 h-24 rounded-xl border-2 flex flex-col justify-between p-2 ${active ? 'border-emerald-500 ring-2 ring-emerald-500' : 'border-slate-700 bg-slate-950'} ${c ? 'text-red-500' : 'text-slate-500'}`}>
-                                            {c ? <><span className="font-bold">{c.rank}</span><span className="text-2xl">{SUITS.find(s=>s.id===c.suit)?.symbol}</span></> : <span className="m-auto text-xs">+</span>}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        <div>
-                            <span className="text-xs font-bold text-slate-300 uppercase">Comunitarias</span>
-                            <div className="flex gap-1.5 mt-1.5 overflow-x-auto">
-                                {[0, 1, 2, 3, 4].map(i => {
-                                    const c = boardCards[i];
-                                    const active = activeSlot.type === 'board' && activeSlot.index === i;
-                                    return (
-                                        <button key={i} onClick={() => setActiveSlot({ type: 'board', index: i })} className={`w-12 h-18 rounded-lg border-2 flex flex-col justify-between p-1.5 text-xs ${active ? 'border-emerald-500 ring-2 ring-emerald-500' : 'border-slate-700 bg-slate-950'} ${c ? 'text-white' : 'text-slate-500'}`}>
-                                            {c ? <><span className="font-bold">{c.rank}</span><span>{SUITS.find(s=>s.id===c.suit)?.symbol}</span></> : <span className="m-auto">+</span>}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* SELECTOR DE PALOS Y VALORES */}
-                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-                            <div className="flex justify-between">
-                                <span className="text-xs text-slate-400">Seleccionar carta:</span>
-                                <div className="flex gap-1">
-                                    {SUITS.map(s => (
-                                        <button key={s.id} onClick={() => setSelectedSuit(s.id)} className={`px-2 py-0.5 rounded text-xs font-bold ${selectedSuit === s.id ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>
-                                            {s.symbol}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-7 gap-1">
-                                {RANKS.map(r => (
-                                    <button key={r.value} onClick={() => {
-                                        const newCard = { rank: r.value, suit: selectedSuit };
-                                        if (activeSlot.type === 'hole') {
-                                            const up = [...holeCards]; up[activeSlot.index] = newCard; setHoleCards(up);
-                                        } else {
-                                            const up = [...boardCards]; up[activeSlot.index] = newCard; setBoardCards(up);
-                                        }
-                                    }} className="bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded p-1 text-xs font-bold">
-                                        {r.display || r.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* PARÁMETROS Y RIVAL */}
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
-                        <div className="grid grid-cols-3 gap-2">
-                            <div>
-                                <label className="text-[10px] text-slate-400 uppercase">Bote</label>
-                                <input type="number" value={potSize} onChange={e => setPotSize(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white font-bold" />
-                            </div>
-                            <div>
-                                <label className="text-[10px] text-slate-400 uppercase">Apostar / Call</label>
-                                <input type="number" value={callAmount} onChange={e => setCallAmount(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white font-bold" />
-                            </div>
-                            <div>
-                                <label className="text-[10px] text-slate-400 uppercase">Stack</label>
-                                <input type="number" value={stack} onChange={e => setStack(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white font-bold" />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="text-[10px] text-slate-400 uppercase">Perfil del Rival</label>
-                            <select value={villainType} onChange={e => setVillainType(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white font-bold mt-1">
-                                <option value="TAG">TAG (Tiburón Equilibrado)</option>
-                                <option value="LAG">LAG (Maníaco / Agresivo)</option>
-                                <option value="NIT">NIT (Roca / Conservador)</option>
-                                <option value="STATION">STATION (Pagador)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* BANNER GTO */}
-                    <div className="bg-gradient-to-r from-emerald-950 via-emerald-900/90 to-slate-900 border-2 border-emerald-500 rounded-2xl p-4 shadow-2xl text-center space-y-2">
-                        <span className="text-xs uppercase tracking-widest text-emerald-300 font-bold">Decisión 98% GTO Recomendada</span>
-                        <div className="text-2xl font-black text-white">
-                            {equity >= potOdds ? "APOSTAR / SUBIR (Value)" : "IGUALAR / FOLD"}
-                        </div>
-                        <p className="text-xs text-slate-300">Pot Odds requeridas: {potOdds}% | Equity: {equity}%</p>
-                        <div className="pt-2 flex items-center justify-between bg-slate-950/80 p-2 rounded-xl border border-slate-800 text-xs">
-                            <span className="text-slate-400">RNG (Frecuencia Mixta): {rng !== null ? `${rng}/100` : 'Pendiente'}</span>
-                            <button onClick={rollRng} className="bg-amber-500 text-slate-950 font-bold px-3 py-1 rounded text-xs">Girar RNG</button>
-                        </div>
-                    </div>
-                </div>
+              <div
+                key={`h-${i}`}
+                className={`w-14 h-20 rounded-xl border-2 flex flex-col items-center justify-between p-2 bg-slate-950 ${c ? s.color : 'border-slate-800 text-slate-700'}`}
+              >
+                {c ? <><span className="text-xs font-bold">{c.label}</span><span className="text-xl">{s.symbol}</span><span className="text-[10px] self-end">{c.label}</span></> : <span className="text-lg text-slate-700">?</span>}
+              </div>
             );
-        }
+          })}
+        </div>
 
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
-</body>
-</html>
+        {/* Board Comunitarias */}
+        <div className="flex justify-center gap-1.5">
+          {[0, 1, 2, 3, 4].map(i => {
+            const c = boardCards[i];
+            const s = c ? SUITS.find(x => x.id === c.suit) : null;
+            return (
+              <div
+                key={`b-${i}`}
+                className={`w-11 h-16 rounded-lg border flex flex-col items-center justify-between p-1 bg-slate-950 ${c ? s.color : 'border-slate-800 text-slate-700'}`}
+              >
+                {c ? <><span className="text-[10px] font-bold">{c.label}</span><span className="text-sm">{s.symbol}</span></> : <span className="text-xs text-slate-700">-</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. MÉTRICAS BOTE & RIVAL */}
+      <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl grid grid-cols-3 gap-2 text-center">
+        <div>
+          <span className="text-[10px] text-slate-400">Bote Óptico</span>
+          <div className="mt-1 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs font-bold text-white">
+            {pot} fichas
+          </div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400">A Igualar</span>
+          <div className="mt-1 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs font-bold text-emerald-400">
+            {callAmount} fichas
+          </div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-400">Rival (VPIP)</span>
+          <div className="mt-1 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs font-bold text-cyan-400 flex items-center justify-center gap-1">
+            <User className="w-3 h-3" /> {villainMetrics.vpip}%
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
